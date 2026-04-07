@@ -1,0 +1,28 @@
+{
+  "name": "@otalan/capacitor",
+  "type": "module",
+  "version": "0.0.0",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc -p tsconfig.json",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix"
+  },
+  "peerDependencies": {
+    "@capawesome/capacitor-live-update": ">=5.0.0",
+    "@capacitor/core": ">=6.0.0"
+  }
+}
