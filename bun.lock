@@ -16,17 +16,17 @@
     },
     "capacitor": {
       "name": "@otalan/capacitor",
-      "version": "0.0.0",
+      "version": "1.0.0",
       "peerDependencies": {
-        "@capacitor/core": ">=6.0.0",
-        "@capawesome/capacitor-live-update": ">=5.0.0",
+        "@capacitor/core": ">=8.3.0",
+        "@capawesome/capacitor-live-update": ">=8.2.1",
       },
     },
     "expo": {
       "name": "@otalan/expo",
-      "version": "0.0.0",
+      "version": "1.0.0",
       "peerDependencies": {
-        "expo-updates": ">=0.24.0",
+        "expo-updates": ">=55.0.19",
         "react-native": ">=0.85.0",
       },
     },

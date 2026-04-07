@@ -1,7 +1,7 @@
 {
   "name": "@otalan/capacitor",
   "type": "module",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -16,13 +16,14 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "check": "tsc -p tsconfig.json",
+    "prebuild": "rm -rf dist",
+    "build": "bun build ./src/index.ts --outfile ./dist/index.js --format esm --target browser --no-bundle && bun tsc -p ./tsconfig.build.json --emitDeclarationOnly",
+    "check": "bun tsc -p ./tsconfig.json --noEmit",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix"
   },
   "peerDependencies": {
-    "@capawesome/capacitor-live-update": ">=5.0.0",
-    "@capacitor/core": ">=6.0.0"
+    "@capawesome/capacitor-live-update": ">=8.2.1",
+    "@capacitor/core": ">=8.3.0"
   }
 }
