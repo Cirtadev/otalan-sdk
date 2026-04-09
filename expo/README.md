@@ -1,21 +1,40 @@
 # `@otalan/expo`
 
-Otalan Expo SDK built on top of `expo-updates`.
+Tiny Otalan helper for Expo and bare React Native apps using `expo-updates`.
+
+## Responsibility
+
+This package is intentionally small.
+
+It is responsible for:
+
+- exposing a small startup helper through `initializeUpdater()`
+- reading the currently running Expo update metadata
+- optionally confirming a successfully launched OTA update through `POST /expo/confirm`
+- sending the public OTA app key through the `x-api-key` header on that confirm request
+
+It is not the OTA client runtime. Update selection, manifest generation, asset downloads, fetch, and apply belong to Otalan `/expo/updates` plus `/expo/assets/...` and the `expo-updates` runtime.
 
 ## What It Does
 
-- checks Otalan before applying an update
-- keeps track of pending and current Otalan bundle IDs
-- avoids reapplying the same pending bundle
-- reloads the app when needed
-- confirms successful installs after the app comes back up
-- calls `ready()` as part of the lifecycle
+- confirms a successfully launched OTA update to Otalan
+- exposes a small `ready()` helper for app startup
+- no-ops when `expo-updates` is disabled or the app is not running on native iOS/Android
 
-## Key Requirement
+## What It Does Not Do
 
-This SDK uses the **OTA app key**.
+- it does not select updates
+- it does not call `/expo/updates` itself
+- it does not fetch or reload updates
+- it does not replace `expo-updates`
 
-Do not use the CI key in the frontend app.
+Otalan must expose an `expo-updates` compatible endpoint for update selection and manifests, plus assets.
+
+Typical backend shape:
+
+- `/updates`: selection + manifest response
+- `/assets/...`: asset hosting
+- optional `/expo/confirm`: install success tracking
 
 ## Install
 
@@ -23,152 +42,145 @@ Do not use the CI key in the frontend app.
 bun add @otalan/expo expo-updates react-native
 ```
 
-## Important Constraint
+## Expo Config
 
-Your app must already be configured correctly with `expo-updates`.
+Point `expo-updates` at the Otalan updates endpoint, not `u.expo.dev`.
 
-This SDK does not replace Expo's native update setup. It adds Otalan gating and bundle tracking around the Expo update flow.
+Example:
 
-## Basic Usage
-
-```ts
-import { createUpdater } from '@otalan/expo'
-
-const updater = createUpdater({
-  apiUrl: 'https://api.otalan.com',
-  apiKey: 'otalan_ota_xxx',
-  appId: 'com.example.app',
-  channel: 'production',
-})
-
-await updater.sync()
+```json
+{
+  "expo": {
+    "updates": {
+      "enabled": true,
+      "url": "https://api.otalan.com/expo/updates?appId=com.example.app&channel=production",
+      "requestHeaders": {
+        "x-api-key": "otalan_ota_xxx"
+      },
+      "checkAutomatically": "NEVER",
+      "fallbackToCacheTimeout": 0
+    }
+  }
+}
 ```
 
-## Recommended Startup Flow
+Use the real Otalan `expo-updates` endpoint.
+
+For Otalan, that means the exact Expo manifest URL plus the public OTA app key in `updates.requestHeaders.x-api-key`.
+
+## Startup Helper
+
+Call the helper once during app startup so a downloaded update can be confirmed after launch.
 
 ```ts
-import { AppState } from 'react-native'
-import { createUpdater } from '@otalan/expo'
+import { initializeUpdater } from '@otalan/expo'
 
-const updater = createUpdater({
+await initializeUpdater({
   apiUrl: 'https://api.otalan.com',
   apiKey: 'otalan_ota_xxx',
   appId: 'com.example.app',
-  channel: 'production',
+  deviceId: 'stable-device-id',
 })
+```
 
-await updater.ready()
-await updater.sync()
+This helper:
 
-AppState.addEventListener('change', async (state) => {
-  if (state === 'active') {
-    await updater.sync()
-  }
-})
+- creates the low-level updater
+- calls `ready()` once
+- requires `deviceId` because `POST /expo/confirm` expects it
+- swallows confirmation failures
+
+## Update Flow
+
+Use `expo-updates` directly for check, fetch, and reload:
+
+```ts
+import * as Updates from 'expo-updates'
+
+const update = await Updates.checkForUpdateAsync()
+
+if (update.isAvailable) {
+  await Updates.fetchUpdateAsync()
+  await Updates.reloadAsync()
+}
 ```
 
 ## API
 
 ### `createUpdater(config)`
 
-Creates an updater instance.
+Creates a tiny updater helper.
 
 Config:
 
 - `apiUrl`: Otalan API base URL
-- `apiKey`: OTA app key
+- `apiKey`: public OTA app key, sent as `x-api-key`
 - `appId`: app identifier
-- `channel`: target channel
-- `runtimeVersion`: optional override, otherwise read from `expo-updates`
-- `currentBundleId`: optional current Otalan bundle ID or async resolver used to seed confirmation on first run
-- `deviceId`: optional stable device ID
 - `autoConfirm`: defaults to `true`
-- `reloadOnSync`: defaults to `true`
+- `deviceId`: required stable device ID
 - `headers`: optional extra request headers
 - `logger`: optional warning logger
-- `storage`: optional persistence adapter for current and pending bundle IDs
-- `storageKeyPrefix`: optional storage key namespace
+
+### `await initializeUpdater(config)`
+
+Opinionated startup helper.
+
+Config:
+
+- everything from `createUpdater(config)`
+- `enabled`: optional explicit gate, otherwise `expo-updates` enabled plus native platform plus `apiUrl` and `apiKey`
+- `logger`: optional warning logger
+
+Returns an object with:
+
+- `getUpdater()`: returns the underlying helper or `null`
+- `ready()`: runs the startup confirmation flow and returns `ExpoReadyResult | null`
+
+### `await updater.getCurrentUpdate()`
+
+Returns the currently running update metadata from `expo-updates`.
+
+Return shape:
+
+- `enabled`
+- `confirmed`
+- `isEmbeddedLaunch`
+- `isEmergencyLaunch`
+- `runtimeVersion`
+- `updateId`
+
+### `await updater.confirmCurrentUpdate()`
+
+Calls `POST /expo/confirm` for the currently running downloaded update.
+
+By default this skips:
+
+- non-native platforms
+- disabled `expo-updates`
+- embedded launches
+- launches with no `updateId`
+
+Payload:
+
+- `x-api-key` header with the public OTA app key
+- `appId`
+- `platform`
+- `updateId`
+- `runtimeVersion`
+- `deviceId`
 
 ### `await updater.ready()`
 
-Marks a pending Otalan bundle as current after app restart and sends install confirmation when possible.
+Alias for `confirmCurrentUpdate()` with warning logging fallback.
 
-Call this during startup before `sync()`.
-
-If the app may already be running an Otalan-managed bundle from an older integration, pass `currentBundleId` on first run so the SDK can seed the current bundle and confirm it once.
-
-### `await updater.check()`
-
-Calls `POST /otalan/check` with:
-
-- `appId`
-- `channel`
-- `runtimeVersion`
-- current Otalan bundle ID
-- optional stable `deviceId`
-
-### `await updater.sync()`
-
-End-to-end update flow:
-
-1. calls `ready()`
-2. checks Otalan
-3. skips if already current
-4. reloads if the same bundle is already pending
-5. runs `expo-updates` check/fetch flow
-6. marks the fetched bundle as pending
-7. reloads unless `reloadOnSync` is `false`
-
-## Storage
-
-The SDK stores two values:
-
-- current bundle ID
-- pending bundle ID
-
-If you do not pass a storage adapter, the SDK falls back to in-memory storage. For real apps, pass persistent storage.
-
-Example storage adapter:
-
-```ts
-import AsyncStorage from '@react-native-async-storage/async-storage'
-
-const updater = createUpdater({
-  apiUrl: 'https://api.otalan.com',
-  apiKey: 'otalan_ota_xxx',
-  appId: 'com.example.app',
-  channel: 'production',
-  storage: {
-    getItem: (key) => AsyncStorage.getItem(key),
-    setItem: (key, value) => AsyncStorage.setItem(key, value),
-    removeItem: (key) => AsyncStorage.removeItem(key),
-  },
-})
-```
-
-Example first-run migration:
-
-```ts
-const updater = createUpdater({
-  apiUrl: 'https://api.otalan.com',
-  apiKey: 'otalan_ota_xxx',
-  appId: 'com.example.app',
-  channel: 'production',
-  currentBundleId: async () => {
-    return await AsyncStorage.getItem('legacy_otalan_bundle_id')
-  },
-  storage: {
-    getItem: (key) => AsyncStorage.getItem(key),
-    setItem: (key, value) => AsyncStorage.setItem(key, value),
-    removeItem: (key) => AsyncStorage.removeItem(key),
-  },
-})
-```
+Use this once during startup.
 
 ## Notes
 
-- `runtimeVersion` must match.
-- Partial rollouts require a stable device ID.
+- `apiUrl` is the Otalan API, for example `https://api.otalan.com`.
+- `updates.url` is the Otalan `expo-updates` manifest endpoint. It may be the same domain, but it is a different concern.
+- This SDK only needs `POST /expo/confirm` on the backend side.
+- `POST /expo/confirm` currently requires `deviceId`.
+- `apiKey` here is the public OTA app key and is sent in `x-api-key`.
 - Production API URL is `https://api.otalan.com`.
-- Local development API URL is `http://localhost:8787`.
 - The key used here must be the OTA app key.

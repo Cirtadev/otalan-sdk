@@ -2,6 +2,22 @@
 
 Otalan Capacitor SDK built on top of `@capawesome/capacitor-live-update`.
 
+## Responsibility
+
+This package is the real OTA client SDK for Capacitor apps.
+
+It is responsible for:
+
+- calling `POST /capacitor/check`
+- deciding whether an update should be applied
+- downloading bundles
+- setting the next bundle
+- reloading the app when needed
+- confirming successful installs through `POST /capacitor/confirm`
+- providing the one-call startup helper `initializeUpdater()`
+
+Capacitor needs this orchestration layer because the underlying live-update plugin is low-level and does not implement the full Otalan flow by itself.
+
 ## What It Does
 
 - checks Otalan for an available update
@@ -20,28 +36,35 @@ Do not use the CI key in the frontend app.
 ## Install
 
 ```bash
-bun add @otalan/capacitor @capawesome/capacitor-live-update @capacitor/core
+bun add @otalan/capacitor @capawesome/capacitor-live-update @capacitor/app @capacitor/core
 ```
 
-## Basic Usage
+## App Lifecycle Helper
 
 ```ts
-import { createUpdater } from '@otalan/capacitor'
+import { initializeUpdater } from '@otalan/capacitor'
 
-const updater = createUpdater({
+await initializeUpdater({
   apiUrl: 'https://api.otalan.com',
   apiKey: 'otalan_ota_xxx',
-  appId: 'com.example.app',
   channel: 'production',
+  deviceId: 'stable-device-id',
+  onResume: true,
 })
-
-await updater.sync()
 ```
 
-## Recommended Startup Flow
+This helper:
+
+- no-ops when not running on native iOS/Android
+- no-ops when `apiUrl` or `apiKey` are missing
+- resolves `appId` from `App.getInfo()` unless you provide one
+- runs a launch sync once
+- optionally registers `App.addListener('resume', ...)`
+- deduplicates concurrent sync calls and swallows sync failures
+
+## Low-Level Usage
 
 ```ts
-import { App } from '@capacitor/app'
 import { createUpdater } from '@otalan/capacitor'
 
 const updater = createUpdater({
@@ -49,14 +72,11 @@ const updater = createUpdater({
   apiKey: 'otalan_ota_xxx',
   appId: 'com.example.app',
   channel: 'production',
+  deviceId: 'stable-device-id',
 })
 
 await updater.ready()
 await updater.sync()
-
-App.addListener('resume', async () => {
-  await updater.sync()
-})
 ```
 
 ## API
@@ -73,15 +93,33 @@ Config:
 - `channel`: target channel
 - `nativeVersion`: optional override, otherwise read from Live Update
 - `platform`: optional override
-- `deviceId`: optional stable device ID override
+- `deviceId`: required stable device ID
 - `autoConfirm`: defaults to `true`
 - `reloadOnSync`: defaults to `true`
 - `headers`: optional extra request headers
 - `logger`: optional warning logger
 
+### `await initializeUpdater(config)`
+
+Opinionated startup helper for Capacitor apps.
+
+Config:
+
+- everything from `createUpdater(config)` except `appId`, which becomes optional
+- `enabled`: optional explicit gate, otherwise native platform plus `apiUrl` and `apiKey`
+- `onResume`: defaults to `true`
+- `logger`: optional warning/info logger
+
+Returns an object with:
+
+- `getUpdater()`: resolves the underlying low-level updater or `null`
+- `sync(trigger?)`: runs a deduplicated sync and returns `CapacitorSyncResult | null`
+
 ### `await updater.ready()`
 
 Calls `LiveUpdate.ready()` and confirms the currently running bundle when possible.
+
+`deviceId` is required because `POST /capacitor/confirm` expects it.
 
 Use this early in app startup.
 
@@ -91,7 +129,7 @@ Returns the currently active bundle ID if one exists.
 
 ### `await updater.check()`
 
-Calls `POST /otalan/check` and returns the Otalan update response.
+Calls `POST /capacitor/check` and returns the Otalan update response.
 
 ### `await updater.sync()`
 
@@ -116,7 +154,8 @@ Current handled cases:
 
 ## Notes
 
-- This SDK expects your backend to expose the Otalan OTA endpoints.
+- This SDK expects Otalan to expose `POST /capacitor/check` and `POST /capacitor/confirm`.
+- `POST /capacitor/confirm` currently requires `deviceId`.
 - Partial rollouts require a stable device ID.
 - Production API URL is `https://api.otalan.com`.
 - Local development API URL is `http://localhost:8787`.
