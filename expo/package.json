@@ -22,8 +22,11 @@
     "lint": "eslint src",
     "lint:fix": "eslint src --fix"
   },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "^2.2.0"
+  },
   "peerDependencies": {
-    "expo-updates": ">=55.0.19",
+    "expo-updates": ">=55.0.20",
     "react-native": ">=0.85.0"
   }
 }

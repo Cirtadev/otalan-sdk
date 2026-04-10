@@ -79,7 +79,6 @@ await initializeUpdater({
   apiUrl: 'https://api.otalan.com',
   apiKey: 'otalan_ota_xxx',
   appId: 'com.example.app',
-  deviceId: 'stable-device-id',
 })
 ```
 
@@ -87,8 +86,27 @@ This helper:
 
 - creates the low-level updater
 - calls `ready()` once
-- requires `deviceId` because `POST /expo/confirm` expects it
+- generates and persists a stable `deviceId` with AsyncStorage by default
+- accepts a custom `deviceId` override when you want full control
+- accepts a custom storage adapter when you prefer something like `expo-secure-store`
 - swallows confirmation failures
+
+Example with `expo-secure-store`:
+
+```ts
+import * as SecureStore from 'expo-secure-store'
+import { initializeUpdater } from '@otalan/expo'
+
+await initializeUpdater({
+  apiUrl: 'https://api.otalan.com',
+  apiKey: 'otalan_ota_xxx',
+  appId: 'com.example.app',
+  deviceIdStorage: {
+    getItem: (key) => SecureStore.getItemAsync(key),
+    setItem: (key, value) => SecureStore.setItemAsync(key, value),
+  },
+})
+```
 
 ## Update Flow
 
@@ -127,7 +145,10 @@ Opinionated startup helper.
 
 Config:
 
-- everything from `createUpdater(config)`
+- everything from `createUpdater(config)`, except `deviceId` becomes optional
+- `deviceId`: optional explicit stable device ID override
+- `deviceIdStorage`: optional async storage adapter with `getItem()` and `setItem()`
+- `deviceIdStorageKey`: optional storage key, defaults to `otalan-device-id`
 - `enabled`: optional explicit gate, otherwise `expo-updates` enabled plus native platform plus `apiUrl` and `apiKey`
 - `logger`: optional warning logger
 
@@ -181,6 +202,7 @@ Use this once during startup.
 - `updates.url` is the Otalan `expo-updates` manifest endpoint. It may be the same domain, but it is a different concern.
 - This SDK only needs `POST /expo/confirm` on the backend side.
 - `POST /expo/confirm` currently requires `deviceId`.
+- `initializeUpdater()` will create and persist that `deviceId` for you unless you override it.
 - `apiKey` here is the public OTA app key and is sent in `x-api-key`.
 - Production API URL is `https://api.otalan.com`.
 - The key used here must be the OTA app key.

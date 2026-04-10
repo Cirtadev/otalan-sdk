@@ -1,9 +1,15 @@
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { Platform } from 'react-native'
 import * as Updates from 'expo-updates'
 
 // -----------------------------------------------------------------------------
 // Types
 // -----------------------------------------------------------------------------
+
+export type DeviceIdStorage = {
+  getItem: (key: string) => Promise<string | null>
+  setItem: (key: string, value: string) => Promise<void>
+}
 
 export type ExpoUpdaterConfig = {
   apiUrl: string
@@ -24,7 +30,10 @@ export type ExpoReadyResult = {
   updateId?: string
 }
 
-export type InitializeExpoUpdaterConfig = Omit<ExpoUpdaterConfig, 'logger'> & {
+export type InitializeExpoUpdaterConfig = Omit<ExpoUpdaterConfig, 'deviceId' | 'logger'> & {
+  deviceId?: string
+  deviceIdStorage?: DeviceIdStorage
+  deviceIdStorageKey?: string
   enabled?: boolean
   logger?: Pick<Console, 'warn'>
 }
@@ -37,6 +46,8 @@ export type InitializedExpoUpdater = {
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
+
+const DEFAULT_DEVICE_ID_STORAGE_KEY = 'otalan-device-id'
 
 function joinUrl(base: string, pathname: string) {
   return `${base.replace(/\/+$/, '')}/${pathname.replace(/^\/+/, '')}`
@@ -71,6 +82,26 @@ function requireDeviceId(config: Pick<ExpoUpdaterConfig, 'deviceId'>) {
   return config.deviceId
 }
 
+function createDeviceId() {
+  const randomPart = Math.random().toString(36).slice(2, 10)
+  return `otalan-expo-${Date.now().toString(36)}-${randomPart}`
+}
+
+async function getOrCreateDeviceId(
+  storage: DeviceIdStorage,
+  storageKey: string,
+) {
+  const existing = await storage.getItem(storageKey)
+
+  if (existing) {
+    return existing
+  }
+
+  const nextDeviceId = createDeviceId()
+  await storage.setItem(storageKey, nextDeviceId)
+  return nextDeviceId
+}
+
 async function postJson(url: string, body: unknown, headers: HeadersInit) {
   const response = await fetch(url, {
     method: 'POST',
@@ -95,7 +126,6 @@ export async function initializeUpdater(
   config: InitializeExpoUpdaterConfig,
 ): Promise<InitializedExpoUpdater> {
   const logger = config.logger ?? console
-  let updater: ReturnType<typeof createUpdater> | null = null
   let readyPromise: Promise<ExpoReadyResult | null> | null = null
 
   function isEnabled() {
@@ -107,23 +137,22 @@ export async function initializeUpdater(
     )
   }
 
+  const updater = !isEnabled()
+    ? null
+    : createUpdater({
+      apiUrl: config.apiUrl,
+      apiKey: config.apiKey,
+      appId: config.appId,
+      autoConfirm: config.autoConfirm,
+      deviceId: config.deviceId ?? await getOrCreateDeviceId(
+        config.deviceIdStorage ?? AsyncStorage,
+        config.deviceIdStorageKey ?? DEFAULT_DEVICE_ID_STORAGE_KEY,
+      ),
+      headers: config.headers,
+      logger,
+    })
+
   function getUpdater() {
-    if (!isEnabled()) {
-      return null
-    }
-
-    if (!updater) {
-      updater = createUpdater({
-        apiUrl: config.apiUrl,
-        apiKey: config.apiKey,
-        appId: config.appId,
-        autoConfirm: config.autoConfirm,
-        deviceId: config.deviceId,
-        headers: config.headers,
-        logger,
-      })
-    }
-
     return updater
   }
 
