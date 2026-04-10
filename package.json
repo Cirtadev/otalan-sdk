@@ -1,11 +1,17 @@
 {
   "name": "otalan-sdk",
   "private": true,
-  "packageManager": "bun@1.3.11",
+  "packageManager": "bun@1.3.12",
   "workspaces": [
     "expo",
     "capacitor"
   ],
+  "scripts": {
+    "build": "cd capacitor && bun run build && cd ../expo && bun run build",
+    "check": "cd capacitor && bun run check && cd ../expo && bun run check",
+    "lint": "cd capacitor && bun run lint && cd ../expo && bun run lint",
+    "test": "bun test"
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@stylistic/eslint-plugin": "^5.10.0",

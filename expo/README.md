@@ -1,52 +1,57 @@
 # `@otalan/expo`
 
-Tiny Otalan helper for Expo and bare React Native apps using `expo-updates`.
+Otalan startup confirmation helper for Expo and bare React Native apps using `expo-updates`.
 
-## Responsibility
+This package is intentionally small. It does not replace `expo-updates`. Otalan update selection, manifest responses, asset hosting, fetching, and reloading still belong to your Otalan backend plus the `expo-updates` runtime.
 
-This package is intentionally small.
+## What This Package Does
 
-It is responsible for:
+- exposes `initializeUpdater()` for app startup
+- reads the currently running Expo update metadata
+- optionally confirms a launched OTA update through `POST /expo/confirm`
+- sends the OTA app key through the `x-api-key` header on that confirm request
 
-- exposing a small startup helper through `initializeUpdater()`
-- reading the currently running Expo update metadata
-- optionally confirming a successfully launched OTA update through `POST /expo/confirm`
-- sending the public OTA app key through the `x-api-key` header on that confirm request
+## What This Package Does Not Do
 
-It is not the OTA client runtime. Update selection, manifest generation, asset downloads, fetch, and apply belong to Otalan `/expo/updates` plus `/expo/assets/...` and the `expo-updates` runtime.
-
-## What It Does
-
-- confirms a successfully launched OTA update to Otalan
-- exposes a small `ready()` helper for app startup
-- no-ops when `expo-updates` is disabled or the app is not running on native iOS/Android
-
-## What It Does Not Do
-
-- it does not select updates
-- it does not call `/expo/updates` itself
-- it does not fetch or reload updates
+- it does not call `/expo/updates`
+- it does not fetch updates
+- it does not reload updates
+- it does not decide rollout eligibility
 - it does not replace `expo-updates`
 
-Otalan must expose an `expo-updates` compatible endpoint for update selection and manifests, plus assets.
+## What You Need
 
-Typical backend shape:
-
-- `/updates`: selection + manifest response
-- `/assets/...`: asset hosting
-- optional `/expo/confirm`: install success tracking
+- an Expo app or bare React Native app using `expo-updates`
+- a working Otalan `expo-updates` endpoint
+- an Otalan OTA app key
 
 ## Install
 
+You do not need Bun to use this package in your app.
+
+Install with any package manager:
+
 ```bash
-bun add @otalan/expo expo-updates react-native
+npm install @otalan/expo expo-updates
 ```
 
-## Expo Config
+```bash
+pnpm add @otalan/expo expo-updates
+```
 
-Point `expo-updates` at the Otalan updates endpoint, not `u.expo.dev`.
+```bash
+yarn add @otalan/expo expo-updates
+```
 
-Example:
+```bash
+bun add @otalan/expo expo-updates
+```
+
+## Configure `expo-updates`
+
+Point `expo-updates` at your Otalan manifest endpoint, not `u.expo.dev`.
+
+Example `app.json` or `app.config.json`:
 
 ```json
 {
@@ -57,20 +62,20 @@ Example:
       "requestHeaders": {
         "x-api-key": "otalan_ota_xxx"
       },
-      "checkAutomatically": "NEVER",
+      "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 0
     }
   }
 }
 ```
 
-Use the real Otalan `expo-updates` endpoint.
+Your backend is still responsible for manifest responses and asset hosting.
 
-For Otalan, that means the exact Expo manifest URL plus the public OTA app key in `updates.requestHeaders.x-api-key`.
+Use `checkAutomatically` with an active update policy such as `ON_LOAD` or `ALWAYS`.
 
-## Startup Helper
+## Quick Start
 
-Call the helper once during app startup so a downloaded update can be confirmed after launch.
+Call `initializeUpdater()` once during app startup:
 
 ```ts
 import { initializeUpdater } from '@otalan/expo'
@@ -82,16 +87,56 @@ await initializeUpdater({
 })
 ```
 
-This helper:
+## Expo Example
 
-- creates the low-level updater
-- calls `ready()` once
-- generates and persists a stable `deviceId` with AsyncStorage by default
-- accepts a custom `deviceId` override when you want full control
-- accepts a custom storage adapter when you prefer something like `expo-secure-store`
-- swallows confirmation failures
+```ts
+import { useEffect } from 'react'
+import { Text, View } from 'react-native'
+import { initializeUpdater } from '@otalan/expo'
 
-Example with `expo-secure-store`:
+export default function App() {
+  useEffect(() => {
+    void initializeUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+    })
+  }, [])
+
+  return (
+    <View>
+      <Text>Otalan Expo app</Text>
+    </View>
+  )
+}
+```
+
+## Bare React Native Example
+
+The same helper works in bare React Native as long as `expo-updates` is installed and configured:
+
+```ts
+import { useEffect } from 'react'
+import { initializeUpdater } from '@otalan/expo'
+
+export function App() {
+  useEffect(() => {
+    void initializeUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+    })
+  }, [])
+
+  return null
+}
+```
+
+## Custom Device ID Storage
+
+By default, `initializeUpdater()` creates and persists a stable `deviceId` with AsyncStorage.
+
+If you want different storage, provide a custom adapter:
 
 ```ts
 import * as SecureStore from 'expo-secure-store'
@@ -123,16 +168,25 @@ if (update.isAvailable) {
 }
 ```
 
+## Startup Helper Behavior
+
+`initializeUpdater()`:
+
+- creates the low-level helper
+- runs `ready()` once during startup
+- creates and persists a stable `deviceId` unless you provide one
+- no-ops outside native iOS and Android
+- no-ops when `expo-updates` is disabled
+- swallows confirmation failures and logs warnings instead
+
 ## API
 
 ### `createUpdater(config)`
 
-Creates a tiny updater helper.
-
 Config:
 
 - `apiUrl`: Otalan API base URL
-- `apiKey`: public OTA app key, sent as `x-api-key`
+- `apiKey`: public OTA app key
 - `appId`: app identifier
 - `autoConfirm`: defaults to `true`
 - `deviceId`: required stable device ID
@@ -141,27 +195,23 @@ Config:
 
 ### `await initializeUpdater(config)`
 
-Opinionated startup helper.
-
 Config:
 
-- everything from `createUpdater(config)`, except `deviceId` becomes optional
+- everything from `createUpdater(config)` except `deviceId`, which becomes optional
 - `deviceId`: optional explicit stable device ID override
 - `deviceIdStorage`: optional async storage adapter with `getItem()` and `setItem()`
 - `deviceIdStorageKey`: optional storage key, defaults to `otalan-device-id`
-- `enabled`: optional explicit gate, otherwise `expo-updates` enabled plus native platform plus `apiUrl` and `apiKey`
+- `enabled`: optional explicit gate
 - `logger`: optional warning logger
 
-Returns an object with:
+Returns:
 
-- `getUpdater()`: returns the underlying helper or `null`
-- `ready()`: runs the startup confirmation flow and returns `ExpoReadyResult | null`
+- `getUpdater()`: returns the helper or `null`
+- `ready()`: runs startup confirmation and returns `ExpoReadyResult | null`
 
 ### `await updater.getCurrentUpdate()`
 
-Returns the currently running update metadata from `expo-updates`.
-
-Return shape:
+Returns:
 
 - `enabled`
 - `confirmed`
@@ -178,31 +228,27 @@ By default this skips:
 
 - non-native platforms
 - disabled `expo-updates`
+- emergency launches
 - embedded launches
 - launches with no `updateId`
-
-Payload:
-
-- `x-api-key` header with the public OTA app key
-- `appId`
-- `platform`
-- `updateId`
-- `runtimeVersion`
-- `deviceId`
 
 ### `await updater.ready()`
 
 Alias for `confirmCurrentUpdate()` with warning logging fallback.
 
-Use this once during startup.
+## Backend Contract
+
+The backend must expose:
+
+- an `expo-updates` compatible manifest endpoint
+- asset URLs referenced by that manifest
+- optional `POST /expo/confirm`
+
+`POST /expo/confirm` currently requires `deviceId`.
 
 ## Notes
 
-- `apiUrl` is the Otalan API, for example `https://api.otalan.com`.
-- `updates.url` is the Otalan `expo-updates` manifest endpoint. It may be the same domain, but it is a different concern.
-- This SDK only needs `POST /expo/confirm` on the backend side.
-- `POST /expo/confirm` currently requires `deviceId`.
-- `initializeUpdater()` will create and persist that `deviceId` for you unless you override it.
-- `apiKey` here is the public OTA app key and is sent in `x-api-key`.
-- Production API URL is `https://api.otalan.com`.
-- The key used here must be the OTA app key.
+- `initializeUpdater()` will create and persist `deviceId` for you unless you override it
+- `apiKey` is the public OTA app key and is sent in `x-api-key`
+- repeated confirmation calls for the same launched update are skipped
+- production API URL is usually `https://api.otalan.com`

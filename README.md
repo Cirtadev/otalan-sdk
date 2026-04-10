@@ -1,59 +1,55 @@
 # `otalan-sdk`
 
-SDK packages for Otalan mobile OTA integrations.
+Monorepo for the Otalan mobile OTA SDK packages:
 
-## Packages
+- `@otalan/capacitor`: full Otalan OTA client for Capacitor apps
+- `@otalan/expo`: small confirmation helper for Expo and bare React Native apps using `expo-updates`
+
+## Which Package To Use
 
 ### `@otalan/capacitor`
 
-This is the real OTA client SDK for Capacitor apps.
+Use this when your app is built with Capacitor and Otalan should handle:
 
-It is responsible for:
+- update checks through `POST /capacitor/check`
+- bundle download and staging
+- reload after install
+- install confirmation through `POST /capacitor/confirm`
 
-- calling `POST /capacitor/check`
-- deciding whether an update should be applied
-- downloading bundles through `@capawesome/capacitor-live-update`
-- setting the next bundle
-- reloading the app when needed
-- confirming successful installs through `POST /capacitor/confirm`
-- providing a startup helper through `initializeUpdater()`
-
-Capacitor needs this SDK because the underlying native plugin is low-level. It does not provide the full Otalan update flow by itself.
-
-See [capacitor/README.md](/Volumes/dev/cirtadev/otalan-sdk/capacitor/README.md).
+Package docs: [capacitor/README.md](/Volumes/dev/cirtadev/otalan-sdk/capacitor/README.md)
 
 ### `@otalan/expo`
 
-This is a tiny helper for Expo and bare React Native apps that use `expo-updates`.
+Use this when your app uses Expo or bare React Native with `expo-updates` and you only need:
 
-It is responsible for:
+- startup confirmation through `POST /expo/confirm`
+- current update metadata
+- a small `initializeUpdater()` helper
 
-- exposing a small startup helper through `initializeUpdater()`
-- reading the currently running Expo update metadata
-- optionally confirming a successfully launched OTA update through `POST /expo/confirm`
+It does not fetch, select, or apply updates itself.
 
-It is not responsible for:
+Package docs: [expo/README.md](/Volumes/dev/cirtadev/otalan-sdk/expo/README.md)
 
-- update selection
-- gating or rollout decisions
-- manifest generation
-- asset downloads
-- fetching or reloading updates
+## Consumer Install
 
-Those responsibilities belong to Otalan `/expo/updates` and `/expo/assets/...` endpoints plus the `expo-updates` runtime.
+You do not need Bun to use either package in an app.
 
-See [expo/README.md](/Volumes/dev/cirtadev/otalan-sdk/expo/README.md).
+Use any package manager you already use:
 
-## Architecture Summary
+```bash
+npm install @otalan/capacitor
+npm install @otalan/expo
+```
 
-Capacitor:
+Peer dependencies are documented in each package README.
 
-- Otalan decides update eligibility through `/capacitor/check`
-- SDK orchestrates download/apply/confirm
+## Repo Development
 
-Expo and bare React Native with `expo-updates`:
+Bun is required to build and validate this repo.
 
-- Otalan `/expo/updates` is the source of truth for selection and manifest response
-- Otalan `/expo/assets/...` serves assets
-- `expo-updates` fetches and applies updates
-- SDK is only optional confirmation and startup glue
+```bash
+bun install
+bun run lint
+bun run check
+bun run build
+```

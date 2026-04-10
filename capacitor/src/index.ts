@@ -76,6 +76,24 @@ function buildHeaders(config: CapacitorUpdaterConfig, extra?: HeadersInit) {
   }
 }
 
+async function parseJsonResponse<T>(response: Response) {
+  if (response.status === 204 || response.status === 205) {
+    return undefined as T
+  }
+
+  const contentLength = response.headers.get('content-length')
+  if (contentLength === '0') {
+    return undefined as T
+  }
+
+  const contentType = response.headers.get('content-type') ?? ''
+  if (!contentType.includes('application/json')) {
+    return undefined as T
+  }
+
+  return response.json() as Promise<T>
+}
+
 async function postJson<T>(url: string, body: unknown, headers: HeadersInit) {
   const response = await fetch(url, {
     method: 'POST',
@@ -91,7 +109,7 @@ async function postJson<T>(url: string, body: unknown, headers: HeadersInit) {
     throw new Error(payload.message ?? `Request failed with status ${response.status}`)
   }
 
-  return response.json() as Promise<T>
+  return parseJsonResponse<T>(response)
 }
 
 async function resolveNativeVersion(config: CapacitorUpdaterConfig) {
@@ -302,12 +320,13 @@ export async function initializeUpdater(
 export function createUpdater(config: CapacitorUpdaterConfig) {
   const logger = config.logger ?? console
   const deviceId = requireDeviceId(config)
+  let confirmedBundleId: string | null = null
 
   return {
     async ready() {
       const result = await LiveUpdate.ready()
 
-      if (result.currentBundleId) {
+      if (result.currentBundleId && result.currentBundleId !== confirmedBundleId) {
         const platform = resolvePlatform(config)
 
         await confirmInstall(config, {
@@ -317,6 +336,8 @@ export function createUpdater(config: CapacitorUpdaterConfig) {
         }).catch((error) => {
           logger.warn('Otalan install confirmation failed.', error)
         })
+
+        confirmedBundleId = result.currentBundleId
       }
 
       return result

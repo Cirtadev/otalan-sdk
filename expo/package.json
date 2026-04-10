@@ -2,6 +2,7 @@
   "name": "@otalan/expo",
   "type": "module",
   "version": "1.0.0",
+  "description": "Otalan OTA confirmation helper for Expo and React Native apps using expo-updates.",
   "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -15,12 +16,24 @@
     "dist",
     "README.md"
   ],
+  "keywords": [
+    "expo",
+    "expo-updates",
+    "react-native",
+    "ota",
+    "mobile",
+    "otalan"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "prebuild": "rm -rf dist",
     "build": "bun build ./src/index.ts --outfile ./dist/index.js --format esm --target browser --no-bundle && bun tsc -p ./tsconfig.build.json --emitDeclarationOnly",
     "check": "bun tsc -p ./tsconfig.json --noEmit",
     "lint": "eslint src",
-    "lint:fix": "eslint src --fix"
+    "lint:fix": "eslint src --fix",
+    "test": "bun test"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0"

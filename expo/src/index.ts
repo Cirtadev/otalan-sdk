@@ -188,6 +188,7 @@ export async function initializeUpdater(
 export function createUpdater(config: ExpoUpdaterConfig) {
   const logger = config.logger ?? console
   const deviceId = requireDeviceId(config)
+  let confirmedUpdateId: string | null = null
 
   return {
     async getCurrentUpdate() {
@@ -225,8 +226,19 @@ export function createUpdater(config: ExpoUpdaterConfig) {
         return current
       }
 
+      if (current.isEmergencyLaunch) {
+        return current
+      }
+
       if (current.isEmbeddedLaunch) {
         return current
+      }
+
+      if (current.updateId === confirmedUpdateId) {
+        return {
+          ...current,
+          confirmed: true,
+        } satisfies ExpoReadyResult
       }
 
       await postJson(
@@ -240,6 +252,8 @@ export function createUpdater(config: ExpoUpdaterConfig) {
         },
         buildHeaders(config),
       )
+
+      confirmedUpdateId = current.updateId
 
       return {
         ...current,

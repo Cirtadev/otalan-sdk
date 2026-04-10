@@ -1,68 +1,109 @@
 # `@otalan/capacitor`
 
-Otalan Capacitor SDK built on top of `@capawesome/capacitor-live-update`.
+Otalan OTA client SDK for Capacitor apps.
 
-## Responsibility
+This package is the full client-side orchestration layer for Otalan on Capacitor. It checks for updates, downloads bundles, stages the next bundle, reloads when needed, and confirms successful installs.
 
-This package is the real OTA client SDK for Capacitor apps.
+## What This Package Does
 
-It is responsible for:
-
-- calling `POST /capacitor/check`
-- deciding whether an update should be applied
-- downloading bundles
-- setting the next bundle
-- reloading the app when needed
-- confirming successful installs through `POST /capacitor/confirm`
-- providing the one-call startup helper `initializeUpdater()`
-
-Capacitor needs this orchestration layer because the underlying live-update plugin is low-level and does not implement the full Otalan flow by itself.
-
-## What It Does
-
-- checks Otalan for an available update
-- avoids re-downloading bundles that already exist
+- calls `POST /capacitor/check`
+- decides whether a bundle should be applied
+- downloads bundles through `@capawesome/capacitor-live-update`
 - sets the next bundle
 - reloads the app when needed
-- confirms successful installs
-- calls `ready()` so rollback protection behaves correctly
+- confirms successful installs through `POST /capacitor/confirm`
+- provides a startup helper through `initializeUpdater()`
 
-## Key Requirement
+## What You Need
 
-This SDK uses the **OTA app key**.
+- a Capacitor app
+- `@capawesome/capacitor-live-update`
+- `@capacitor/app`
+- `@capacitor/core`
+- an Otalan OTA app key
+- a stable device ID
 
-Do not use the CI key in the frontend app.
+Use the OTA app key in the app. Do not use a CI key in frontend code.
 
 ## Install
+
+You do not need Bun to use this package in your app.
+
+Install with any package manager:
+
+```bash
+npm install @otalan/capacitor @capawesome/capacitor-live-update @capacitor/app @capacitor/core
+```
+
+```bash
+pnpm add @otalan/capacitor @capawesome/capacitor-live-update @capacitor/app @capacitor/core
+```
+
+```bash
+yarn add @otalan/capacitor @capawesome/capacitor-live-update @capacitor/app @capacitor/core
+```
 
 ```bash
 bun add @otalan/capacitor @capawesome/capacitor-live-update @capacitor/app @capacitor/core
 ```
 
-## App Lifecycle Helper
+## Quick Start
+
+Call `initializeUpdater()` once during app startup:
 
 ```ts
 import { initializeUpdater } from '@otalan/capacitor'
+
+async function getStableDeviceId() {
+  return loadOrCreateStableDeviceId()
+}
 
 await initializeUpdater({
   apiUrl: 'https://api.otalan.com',
   apiKey: 'otalan_ota_xxx',
   channel: 'production',
-  deviceId: 'stable-device-id',
+  deviceId: await getStableDeviceId(),
   onResume: true,
 })
 ```
 
-This helper:
+## Capacitor Example
 
-- no-ops when not running on native iOS/Android
-- no-ops when `apiUrl` or `apiKey` are missing
-- resolves `appId` from `App.getInfo()` unless you provide one
-- runs a launch sync once
-- optionally registers `App.addListener('resume', ...)`
-- deduplicates concurrent sync calls and swallows sync failures
+```ts
+// src/ota.ts
+import { initializeUpdater } from '@otalan/capacitor'
+
+async function getStableDeviceId() {
+  return loadOrCreateStableDeviceId()
+}
+
+// -----------------------------------------------------------------------------
+// Public API
+// -----------------------------------------------------------------------------
+
+export async function startOtalanUpdater() {
+  return initializeUpdater({
+    apiUrl: 'https://api.otalan.com',
+    apiKey: 'otalan_ota_xxx',
+    channel: 'production',
+    deviceId: await getStableDeviceId(),
+    onResume: true,
+  })
+}
+```
+
+```ts
+// src/main.ts
+import { startOtalanUpdater } from './ota'
+
+void startOtalanUpdater()
+```
+
+The `deviceId` must stay stable across launches. Otalan uses it for confirmation and rollout targeting.
 
 ## Low-Level Usage
+
+If you want to control the flow yourself, use `createUpdater()`:
 
 ```ts
 import { createUpdater } from '@otalan/capacitor'
@@ -72,27 +113,37 @@ const updater = createUpdater({
   apiKey: 'otalan_ota_xxx',
   appId: 'com.example.app',
   channel: 'production',
-  deviceId: 'stable-device-id',
+  deviceId: await loadOrCreateStableDeviceId(),
 })
 
 await updater.ready()
 await updater.sync()
 ```
 
+## Startup Helper Behavior
+
+`initializeUpdater()`:
+
+- no-ops outside native iOS and Android
+- no-ops when `apiUrl` or `apiKey` are missing
+- resolves `appId` from `App.getInfo()` unless you provide one
+- runs one launch sync
+- can register a resume listener
+- deduplicates concurrent sync calls
+- swallows sync failures and logs warnings instead
+
 ## API
 
 ### `createUpdater(config)`
-
-Creates an updater instance.
 
 Config:
 
 - `apiUrl`: Otalan API base URL
 - `apiKey`: OTA app key
 - `appId`: app identifier
-- `channel`: target channel
-- `nativeVersion`: optional override, otherwise read from Live Update
-- `platform`: optional override
+- `channel`: release channel
+- `nativeVersion`: optional native version override
+- `platform`: optional platform override
 - `deviceId`: required stable device ID
 - `autoConfirm`: defaults to `true`
 - `reloadOnSync`: defaults to `true`
@@ -101,62 +152,54 @@ Config:
 
 ### `await initializeUpdater(config)`
 
-Opinionated startup helper for Capacitor apps.
-
 Config:
 
 - everything from `createUpdater(config)` except `appId`, which becomes optional
-- `enabled`: optional explicit gate, otherwise native platform plus `apiUrl` and `apiKey`
+- `enabled`: optional explicit gate
 - `onResume`: defaults to `true`
-- `logger`: optional warning/info logger
+- `logger`: optional warning and info logger
 
-Returns an object with:
+Returns:
 
-- `getUpdater()`: resolves the underlying low-level updater or `null`
+- `getUpdater()`: resolves the low-level updater or `null`
 - `sync(trigger?)`: runs a deduplicated sync and returns `CapacitorSyncResult | null`
 
 ### `await updater.ready()`
 
 Calls `LiveUpdate.ready()` and confirms the currently running bundle when possible.
 
-`deviceId` is required because `POST /capacitor/confirm` expects it.
-
-Use this early in app startup.
-
 ### `await updater.getCurrentBundleId()`
 
-Returns the currently active bundle ID if one exists.
+Returns the active bundle ID when one exists.
 
 ### `await updater.check()`
 
-Calls `POST /capacitor/check` and returns the Otalan update response.
+Calls `POST /capacitor/check`.
 
 ### `await updater.sync()`
 
-End-to-end update flow:
+Runs the full Otalan update flow:
 
 1. calls `ready()`
 2. checks Otalan
 3. skips if already current
-4. reloads immediately if the bundle is already set as next
+4. reloads immediately if the target bundle is already staged
 5. downloads only when needed
-6. sets next bundle
-7. reloads the app unless `reloadOnSync` is `false`
+6. stages the next bundle
+7. reloads unless `reloadOnSync` is `false`
 
-## Behavior
+## Backend Contract
 
-Current handled cases:
+The backend must expose:
 
-- already on the current bundle
-- target bundle already downloaded
-- target bundle already set as the next bundle
-- install confirmation on app startup after `ready()`
+- `POST /capacitor/check`
+- `POST /capacitor/confirm`
+
+`POST /capacitor/confirm` currently requires `deviceId`.
 
 ## Notes
 
-- This SDK expects Otalan to expose `POST /capacitor/check` and `POST /capacitor/confirm`.
-- `POST /capacitor/confirm` currently requires `deviceId`.
-- Partial rollouts require a stable device ID.
-- Production API URL is `https://api.otalan.com`.
-- Local development API URL is `http://localhost:8787`.
-- The key used here must be the OTA app key.
+- repeated confirmation calls for the same installed bundle are skipped
+- partial rollouts require a stable device ID
+- production API URL is usually `https://api.otalan.com`
+- local development API URL is usually `http://localhost:8787`
