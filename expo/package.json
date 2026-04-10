@@ -2,6 +2,7 @@
   "name": "@otalan/expo",
   "type": "module",
   "version": "1.0.0",
+  "license": "Apache-2.0",
   "description": "Otalan OTA confirmation helper for Expo and React Native apps using expo-updates.",
   "sideEffects": false,
   "main": "./dist/index.js",
@@ -14,7 +15,10 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "NOTICE",
+    "LICENSE",
+    "third-party-licenses.txt"
   ],
   "keywords": [
     "expo",
