@@ -29,6 +29,7 @@
   "scripts": {
     "prebuild": "rm -rf dist",
     "build": "bun build ./src/index.ts --outfile ./dist/index.js --format esm --target browser --no-bundle && bun tsc -p ./tsconfig.build.json --emitDeclarationOnly",
+    "prepack": "bun run build",
     "check": "bun tsc -p ./tsconfig.json --noEmit",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
