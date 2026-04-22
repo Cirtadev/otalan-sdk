@@ -8,7 +8,9 @@
     "capacitor"
   ],
   "scripts": {
-    "build": "cd capacitor && bun run build && cd ../expo && bun run build",
+    "build:capacitor": "cd capacitor && bun run build",
+    "build:expo": "cd expo && bun run build",
+    "build": "bun run --parallel build:capacitor build:expo",
     "check": "cd capacitor && bun run check && cd ../expo && bun run check",
     "lint": "cd capacitor && bun run lint && cd ../expo && bun run lint",
     "test": "bun test"
