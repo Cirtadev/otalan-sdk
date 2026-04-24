@@ -197,9 +197,14 @@ The backend must expose:
 
 `POST /capacitor/confirm` currently requires `deviceId`.
 
+Only active, non-archived Otalan apps are eligible for OTA checks and install confirmations. If the app is archived, `initializeUpdater()` logs the rejected request and leaves the host app running; low-level `check()` or `sync()` calls reject with the API error.
+
+`POST /capacitor/check` can also return `409` when the active bundle record exists but its managed archive is no longer available.
+
 ## Notes
 
 - repeated confirmation calls for the same installed bundle are skipped
 - partial rollouts require a stable device ID
+- archived apps do not receive updates until they are restored in Otalan
 - production API URL is usually `https://api.otalan.com`
 - local development API URL is usually `http://localhost:8787`

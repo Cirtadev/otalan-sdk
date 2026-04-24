@@ -16,7 +16,7 @@ Use this when your app is built with Capacitor and Otalan should handle:
 - reload after install
 - install confirmation through `POST /capacitor/confirm`
 
-Package docs: [capacitor/README.md](/Volumes/dev/cirtadev/otalan-sdk/capacitor/README.md)
+Package docs: [capacitor/README.md](capacitor/README.md)
 
 ### `@otalan/expo`
 
@@ -28,7 +28,11 @@ Use this when your app uses Expo or bare React Native with `expo-updates` and yo
 
 It does not fetch, select, or apply updates itself.
 
-Package docs: [expo/README.md](/Volumes/dev/cirtadev/otalan-sdk/expo/README.md)
+Package docs: [expo/README.md](expo/README.md)
+
+## App Lifecycle
+
+Otalan serves OTA traffic only for active, non-archived apps. When an app is archived in Otalan, the mobile SDKs keep the host app running, but update checks and install confirmations for that app are rejected by the API until the app is restored.
 
 ## Consumer Install
 

@@ -73,6 +73,10 @@ Your backend is still responsible for manifest responses and asset hosting.
 
 Use `checkAutomatically` with an active update policy such as `ON_LOAD` or `ALWAYS`.
 
+Otalan protects Expo asset URLs with the same OTA API key. Include `x-api-key` or `authorization` on the `/expo/updates` request; the manifest response will pass the matching `assetRequestHeaders` to the Expo runtime for `/expo/assets/...` downloads.
+
+Partial rollouts for Expo require a stable `x-device-id` header on update checks. If you need Expo staged rollouts, create or load the stable ID in your app, pass it as `deviceId` to `initializeUpdater()`, and wire that same value into your `expo-updates` request headers before calling `Updates.checkForUpdateAsync()`.
+
 ## Quick Start
 
 Call `initializeUpdater()` once during app startup:
@@ -246,9 +250,14 @@ The backend must expose:
 
 `POST /expo/confirm` currently requires `deviceId`.
 
+Asset requests require the project OTA API key. Otalan's manifest response supplies `assetRequestHeaders` when the update request includes `x-api-key` or `authorization`.
+
+Only active, non-archived Otalan apps are eligible for Expo updates and install confirmations. Archived apps return API errors until they are restored; `ready()` logs confirmation failures and returns the current update metadata.
+
 ## Notes
 
 - `initializeUpdater()` will create and persist `deviceId` for you unless you override it
 - `apiKey` is the public OTA app key and is sent in `x-api-key`
 - repeated confirmation calls for the same launched update are skipped
+- archived apps do not receive updates until they are restored in Otalan
 - production API URL is usually `https://api.otalan.com`
