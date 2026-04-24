@@ -34,9 +34,9 @@
     "build": "bun build ./src/index.ts --outfile ./dist/index.js --format esm --target browser --no-bundle && bun tsc -p ./tsconfig.build.json --emitDeclarationOnly",
     "prepack": "bun run build",
     "check": "bun tsc -p ./tsconfig.json --noEmit",
-    "lint": "eslint src",
-    "lint:fix": "eslint src --fix",
-    "test": "bun test"
+    "lint": "eslint src tests",
+    "lint:fix": "eslint src tests --fix",
+    "test": "bun test tests"
   },
   "peerDependencies": {
     "@capawesome/capacitor-live-update": ">=8.2.1",

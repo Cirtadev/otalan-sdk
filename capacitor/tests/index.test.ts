@@ -69,7 +69,7 @@ mock.module('@capawesome/capacitor-live-update', () => ({
   },
 }))
 
-const { createUpdater } = await import('./index')
+const { createUpdater } = await import('../src/index')
 
 // -----------------------------------------------------------------------------
 // Test Helpers
@@ -93,6 +93,10 @@ function createLogger() {
       },
     },
   }
+}
+
+function readHeader(headers: HeadersInit | undefined, name: string) {
+  return new Headers(headers).get(name)
 }
 
 beforeEach(() => {
@@ -134,6 +138,33 @@ afterAll(() => {
 // -----------------------------------------------------------------------------
 
 describe('@otalan/capacitor', () => {
+  test('check supports Headers instances in custom request headers', async () => {
+    fetchState.handler = async (_url, init) => {
+      expect(readHeader(init?.headers, 'content-type')).toBe('application/json')
+      expect(readHeader(init?.headers, 'x-api-key')).toBe('otalan_ota_xxx')
+      expect(readHeader(init?.headers, 'x-custom-header')).toBe('custom-value')
+
+      return Response.json({ updateAvailable: false })
+    }
+
+    const updater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      deviceId: 'device-1',
+      headers: new Headers([
+        ['x-api-key', 'should-not-override-configured-key'],
+        ['x-custom-header', 'custom-value'],
+      ]),
+    })
+
+    const result = await updater.check()
+
+    expect(result).toEqual({ updateAvailable: false })
+    expect(fetchState.calls).toHaveLength(1)
+  })
+
   test('ready handles empty successful confirm responses without warning', async () => {
     capacitorState.readyResult = { currentBundleId: 'bundle-1' }
 

@@ -78,7 +78,11 @@ function applyModuleMocks() {
 async function loadSdk() {
   importCounter += 1
   applyModuleMocks()
-  return import(`./index?test=${importCounter}`)
+  return import(`../src/index?test=${importCounter}`)
+}
+
+function readHeader(headers: HeadersInit | undefined, name: string) {
+  return new Headers(headers).get(name)
 }
 
 beforeEach(() => {
@@ -124,6 +128,33 @@ afterAll(() => {
 // -----------------------------------------------------------------------------
 
 describe('@otalan/expo', () => {
+  test('confirmCurrentUpdate supports tuple arrays in custom request headers', async () => {
+    fetchState.handler = async (_url, init) => {
+      expect(readHeader(init?.headers, 'content-type')).toBe('application/json')
+      expect(readHeader(init?.headers, 'x-api-key')).toBe('otalan_ota_xxx')
+      expect(readHeader(init?.headers, 'x-custom-header')).toBe('custom-value')
+
+      return Response.json({ ok: true })
+    }
+
+    const { createUpdater } = await loadSdk()
+    const updater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      deviceId: 'device-1',
+      headers: [
+        ['x-api-key', 'should-not-override-configured-key'],
+        ['x-custom-header', 'custom-value'],
+      ],
+    })
+
+    const result = await updater.confirmCurrentUpdate()
+
+    expect(result.confirmed).toBe(true)
+    expect(fetchState.calls).toHaveLength(1)
+  })
+
   test('confirmCurrentUpdate skips emergency launches', async () => {
     expoState.isEmergencyLaunch = true
 

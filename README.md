@@ -55,5 +55,8 @@ Bun is required to build and validate this repo.
 bun install
 bun run lint
 bun run check
+bun test
 bun run build
 ```
+
+Package tests live under each workspace `tests/` directory.

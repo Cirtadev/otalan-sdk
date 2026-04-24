@@ -53,13 +53,29 @@ function joinUrl(base: string, pathname: string) {
   return `${base.replace(/\/+$/, '')}/${pathname.replace(/^\/+/, '')}`
 }
 
-function buildHeaders(config: ExpoUpdaterConfig, extra?: HeadersInit) {
-  return {
-    'Content-Type': 'application/json',
-    'x-api-key': config.apiKey,
-    ...config.headers,
-    ...extra,
+function mergeHeaders(...sources: Array<HeadersInit | undefined>) {
+  const headers = new Headers()
+
+  for (const source of sources) {
+    if (!source) {
+      continue
+    }
+
+    new Headers(source).forEach((value, key) => {
+      headers.set(key, value)
+    })
   }
+
+  return headers
+}
+
+function buildHeaders(config: ExpoUpdaterConfig, extra?: HeadersInit) {
+  const headers = mergeHeaders(config.headers, extra)
+
+  headers.set('Content-Type', 'application/json')
+  headers.set('x-api-key', config.apiKey)
+
+  return headers
 }
 
 function resolvePlatform() {

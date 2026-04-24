@@ -2,7 +2,7 @@
 
 Otalan startup confirmation helper for Expo and bare React Native apps using `expo-updates`.
 
-This package is intentionally small. It does not replace `expo-updates`. Otalan update selection, manifest responses, asset hosting, fetching, and reloading still belong to your Otalan backend plus the `expo-updates` runtime.
+This package is intentionally small. It does not replace `expo-updates`. Otalan update selection, manifest responses, authenticated asset delivery, fetching, and reloading still belong to your Otalan backend plus the `expo-updates` runtime.
 
 ## What This Package Does
 
@@ -69,13 +69,13 @@ Example `app.json` or `app.config.json`:
 }
 ```
 
-Your backend is still responsible for manifest responses and asset hosting.
+Your backend is still responsible for manifest responses and authenticated asset delivery.
 
 Use `checkAutomatically` with an active update policy such as `ON_LOAD` or `ALWAYS`.
 
 Otalan protects Expo asset URLs with the same OTA API key. Include `x-api-key` or `authorization` on the `/expo/updates` request; the manifest response will pass the matching `assetRequestHeaders` to the Expo runtime for `/expo/assets/...` downloads.
 
-Partial rollouts for Expo require a stable `x-device-id` header on update checks. If you need Expo staged rollouts, create or load the stable ID in your app, pass it as `deviceId` to `initializeUpdater()`, and wire that same value into your `expo-updates` request headers before calling `Updates.checkForUpdateAsync()`.
+Partial rollouts for Expo require a stable `x-device-id` header on update checks. Static config alone is not enough for that. If you need Expo staged rollouts, create or load the stable ID in your app, pass it as `deviceId` to `initializeUpdater()`, and wire that same value into your `expo-updates` request headers before calling `Updates.checkForUpdateAsync()`.
 
 ## Quick Start
 
@@ -245,7 +245,7 @@ Alias for `confirmCurrentUpdate()` with warning logging fallback.
 The backend must expose:
 
 - an `expo-updates` compatible manifest endpoint
-- asset URLs referenced by that manifest
+- authenticated asset routes referenced by that manifest
 - optional `POST /expo/confirm`
 
 `POST /expo/confirm` currently requires `deviceId`.
