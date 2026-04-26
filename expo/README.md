@@ -8,7 +8,7 @@ This package is intentionally small. It does not replace `expo-updates`. Otalan 
 
 - exposes `initializeUpdater()` for app startup
 - reads the currently running Expo update metadata
-- optionally confirms a launched OTA update through `POST /expo/confirm`
+- optionally confirms a launched OTA update through `POST /expo/confirm` with transfer source
 - sends the OTA app key through the `x-api-key` header on that confirm request
 
 ## What This Package Does Not Do
@@ -172,6 +172,8 @@ if (update.isAvailable) {
 }
 ```
 
+The helper does not fetch or stage Expo updates itself, so it cannot reliably prove whether the Expo runtime loaded a cached update or a freshly downloaded one. For billing, analytics, and limits, `@otalan/expo` sends `transferSource: "downloaded"` by default on confirmation. This is the conservative source for Expo and bare React Native because cached-source detection is not available in this helper.
+
 ## Startup Helper Behavior
 
 `initializeUpdater()`:
@@ -222,11 +224,14 @@ Returns:
 - `isEmbeddedLaunch`
 - `isEmergencyLaunch`
 - `runtimeVersion`
+- `transferSource`
 - `updateId`
 
 ### `await updater.confirmCurrentUpdate()`
 
 Calls `POST /expo/confirm` for the currently running downloaded update.
+
+Confirmed results include `transferSource: "downloaded"`.
 
 By default this skips:
 
@@ -248,7 +253,22 @@ The backend must expose:
 - authenticated asset routes referenced by that manifest
 - optional `POST /expo/confirm`
 
-`POST /expo/confirm` currently requires `deviceId`.
+`POST /expo/confirm` requires `deviceId` and `transferSource`.
+
+Confirm payload:
+
+```json
+{
+  "appId": "com.example.app",
+  "platform": "ios",
+  "updateId": "update-123",
+  "runtimeVersion": "1.0.0",
+  "deviceId": "device-1",
+  "transferSource": "downloaded"
+}
+```
+
+`transferSource` is either `downloaded` or `cached` across Otalan mobile SDKs. This package always sends `downloaded` because it does not control update fetching and cannot confidently detect cached Expo launches. Keep confirmation processing idempotent per app, device, and update so retries do not double count usage.
 
 Asset requests require the project OTA API key. Otalan's manifest response supplies `assetRequestHeaders` when the update request includes `x-api-key` or `authorization`.
 
@@ -259,5 +279,6 @@ Only active, non-archived Otalan apps are eligible for Expo updates and install 
 - `initializeUpdater()` will create and persist `deviceId` for you unless you override it
 - `apiKey` is the public OTA app key and is sent in `x-api-key`
 - repeated confirmation calls for the same launched update are skipped
+- Expo and bare React Native confirmations use `downloaded` as the transfer source default
 - archived apps do not receive updates until they are restored in Otalan
 - production API URL is usually `https://api.otalan.com`

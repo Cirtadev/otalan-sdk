@@ -11,6 +11,8 @@ export type DeviceIdStorage = {
   setItem: (key: string, value: string) => Promise<void>
 }
 
+export type ExpoTransferSource = 'downloaded' | 'cached'
+
 export type ExpoUpdaterConfig = {
   apiUrl: string
   apiKey: string
@@ -27,6 +29,7 @@ export type ExpoReadyResult = {
   isEmbeddedLaunch: boolean
   isEmergencyLaunch: boolean
   runtimeVersion?: string
+  transferSource?: ExpoTransferSource
   updateId?: string
 }
 
@@ -48,6 +51,7 @@ export type InitializedExpoUpdater = {
 // -----------------------------------------------------------------------------
 
 const DEFAULT_DEVICE_ID_STORAGE_KEY = 'otalan-device-id'
+const DEFAULT_TRANSFER_SOURCE: ExpoTransferSource = 'downloaded'
 
 function joinUrl(base: string, pathname: string) {
   return `${base.replace(/\/+$/, '')}/${pathname.replace(/^\/+/, '')}`
@@ -254,6 +258,7 @@ export function createUpdater(config: ExpoUpdaterConfig) {
         return {
           ...current,
           confirmed: true,
+          transferSource: DEFAULT_TRANSFER_SOURCE,
         } satisfies ExpoReadyResult
       }
 
@@ -265,6 +270,7 @@ export function createUpdater(config: ExpoUpdaterConfig) {
           updateId: current.updateId,
           runtimeVersion: current.runtimeVersion,
           deviceId,
+          transferSource: DEFAULT_TRANSFER_SOURCE,
         },
         buildHeaders(config),
       )
@@ -274,6 +280,7 @@ export function createUpdater(config: ExpoUpdaterConfig) {
       return {
         ...current,
         confirmed: true,
+        transferSource: DEFAULT_TRANSFER_SOURCE,
       } satisfies ExpoReadyResult
     },
 

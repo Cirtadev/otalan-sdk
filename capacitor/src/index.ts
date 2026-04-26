@@ -20,6 +20,8 @@ type OtaCheckResponse =
 
 type OtaPlatform = 'ios' | 'android'
 
+export type CapacitorTransferSource = 'downloaded' | 'cached'
+
 export type CapacitorUpdaterConfig = {
   apiUrl: string
   apiKey: string
@@ -41,6 +43,7 @@ export type CapacitorSyncResult =
     applied: boolean
     bundleId: string
     mandatory: boolean
+    transferSource: CapacitorTransferSource
     releaseNotes?: string | null
     reloadRequired?: boolean
   }
@@ -62,6 +65,9 @@ export type InitializedCapacitorUpdater = {
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
+
+const DEFAULT_TRANSFER_SOURCE: CapacitorTransferSource = 'downloaded'
+const TRANSFER_SOURCE_STORAGE_KEY_PREFIX = 'otalan:capacitor:transfer-source:'
 
 function joinUrl(base: string, pathname: string) {
   return `${base.replace(/\/+$/, '')}/${pathname.replace(/^\/+/, '')}`
@@ -159,13 +165,74 @@ function isNativeOtaPlatform(platform: string): platform is OtaPlatform {
   return platform === 'ios' || platform === 'android'
 }
 
+function isCapacitorTransferSource(value: string | null): value is CapacitorTransferSource {
+  return value === 'downloaded' || value === 'cached'
+}
+
+function getTransferSourceStorage() {
+  try {
+    return globalThis.localStorage
+  } catch {
+    return undefined
+  }
+}
+
+function buildTransferSourceStorageKey(config: Pick<CapacitorUpdaterConfig, 'appId'>, bundleId: string) {
+  return `${TRANSFER_SOURCE_STORAGE_KEY_PREFIX}${config.appId}:${bundleId}`
+}
+
+function readStoredTransferSource(config: CapacitorUpdaterConfig, bundleId: string) {
+  const storage = getTransferSourceStorage()
+  if (!storage) {
+    return undefined
+  }
+
+  try {
+    const value = storage.getItem(buildTransferSourceStorageKey(config, bundleId))
+    return isCapacitorTransferSource(value) ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function writeStoredTransferSource(
+  config: CapacitorUpdaterConfig,
+  bundleId: string,
+  transferSource: CapacitorTransferSource,
+) {
+  const storage = getTransferSourceStorage()
+  if (!storage) {
+    return
+  }
+
+  try {
+    storage.setItem(buildTransferSourceStorageKey(config, bundleId), transferSource)
+  } catch {
+    // The in-memory marker still covers the current JS context.
+  }
+}
+
+function removeStoredTransferSource(config: CapacitorUpdaterConfig, bundleId: string) {
+  const storage = getTransferSourceStorage()
+  if (!storage) {
+    return
+  }
+
+  try {
+    storage.removeItem(buildTransferSourceStorageKey(config, bundleId))
+  } catch {
+    // Best effort cleanup only.
+  }
+}
+
 async function confirmInstall(config: CapacitorUpdaterConfig, input: {
   platform: 'ios' | 'android'
   bundleId: string
   deviceId: string
+  transferSource: CapacitorTransferSource
 }) {
   if (!config.autoConfirm && config.autoConfirm !== undefined) {
-    return
+    return false
   }
 
   await postJson(
@@ -175,9 +242,12 @@ async function confirmInstall(config: CapacitorUpdaterConfig, input: {
       platform: input.platform,
       bundleId: input.bundleId,
       deviceId: input.deviceId,
+      transferSource: input.transferSource,
     },
     buildHeaders(config),
   )
+
+  return true
 }
 
 async function hasDownloadedBundle(bundleId: string) {
@@ -185,11 +255,15 @@ async function hasDownloadedBundle(bundleId: string) {
   return result.bundleIds.includes(bundleId)
 }
 
+async function hasDownloadedBundleSafely(bundleId: string) {
+  return hasDownloadedBundle(bundleId).catch(() => false)
+}
+
 async function ensureBundleIsAvailable(
   bundle: Extract<OtaCheckResponse, { updateAvailable: true }>,
-) {
-  if (await hasDownloadedBundle(bundle.bundleId)) {
-    return
+): Promise<CapacitorTransferSource> {
+  if (await hasDownloadedBundleSafely(bundle.bundleId)) {
+    return 'cached'
   }
 
   try {
@@ -198,9 +272,10 @@ async function ensureBundleIsAvailable(
       bundleId: bundle.bundleId,
       checksum: bundle.checksum ?? undefined,
     })
+    return 'downloaded'
   } catch (error) {
-    if (await hasDownloadedBundle(bundle.bundleId)) {
-      return
+    if (await hasDownloadedBundleSafely(bundle.bundleId)) {
+      return 'downloaded'
     }
 
     throw error
@@ -281,8 +356,9 @@ export async function initializeUpdater(
 
     inFlightSync = updater.sync().then((result) => {
       if (result.updateAvailable && result.reloadRequired) {
-        logger.info?.('[ota] update downloaded and staged', {
+        logger.info?.('[ota] update staged', {
           bundleId: result.bundleId,
+          transferSource: result.transferSource,
         })
       }
 
@@ -337,23 +413,59 @@ export function createUpdater(config: CapacitorUpdaterConfig) {
   const logger = config.logger ?? console
   const deviceId = requireDeviceId(config)
   let confirmedBundleId: string | null = null
+  const pendingTransferSources = new Map<string, CapacitorTransferSource>()
+
+  function rememberTransferSource(bundleId: string, transferSource: CapacitorTransferSource) {
+    pendingTransferSources.set(bundleId, transferSource)
+    writeStoredTransferSource(config, bundleId, transferSource)
+  }
+
+  function resolveTransferSource(bundleId: string) {
+    return pendingTransferSources.get(bundleId)
+      ?? readStoredTransferSource(config, bundleId)
+      ?? DEFAULT_TRANSFER_SOURCE
+  }
+
+  async function resolveStagedTransferSource(bundleId: string) {
+    const knownTransferSource = pendingTransferSources.get(bundleId)
+      ?? readStoredTransferSource(config, bundleId)
+
+    if (knownTransferSource) {
+      return knownTransferSource
+    }
+
+    return await hasDownloadedBundleSafely(bundleId)
+      ? 'cached'
+      : DEFAULT_TRANSFER_SOURCE
+  }
+
+  function clearTransferSource(bundleId: string) {
+    pendingTransferSources.delete(bundleId)
+    removeStoredTransferSource(config, bundleId)
+  }
 
   return {
     async ready() {
       const result = await LiveUpdate.ready()
 
       if (result.currentBundleId && result.currentBundleId !== confirmedBundleId) {
+        const bundleId = result.currentBundleId
         const platform = resolvePlatform(config)
 
-        await confirmInstall(config, {
+        const confirmed = await confirmInstall(config, {
           platform,
-          bundleId: result.currentBundleId,
+          bundleId,
           deviceId,
+          transferSource: resolveTransferSource(bundleId),
         }).catch((error) => {
           logger.warn('Otalan install confirmation failed.', error)
+          return false
         })
 
-        confirmedBundleId = result.currentBundleId
+        if (confirmed) {
+          clearTransferSource(bundleId)
+          confirmedBundleId = bundleId
+        }
       }
 
       return result
@@ -401,6 +513,9 @@ export function createUpdater(config: CapacitorUpdaterConfig) {
       }
 
       if (check.bundleId === nextBundle.bundleId) {
+        const transferSource = await resolveStagedTransferSource(check.bundleId)
+        rememberTransferSource(check.bundleId, transferSource)
+
         if (config.reloadOnSync !== false) {
           await LiveUpdate.reload()
         }
@@ -410,16 +525,18 @@ export function createUpdater(config: CapacitorUpdaterConfig) {
           applied: true,
           bundleId: check.bundleId,
           mandatory: check.mandatory ?? true,
+          transferSource,
           releaseNotes: check.releaseNotes,
           reloadRequired: config.reloadOnSync === false,
         }
       }
 
-      await ensureBundleIsAvailable(check)
+      const transferSource = await ensureBundleIsAvailable(check)
 
       await LiveUpdate.setNextBundle({
         bundleId: check.bundleId,
       })
+      rememberTransferSource(check.bundleId, transferSource)
 
       if (config.reloadOnSync !== false) {
         await LiveUpdate.reload()
@@ -430,6 +547,7 @@ export function createUpdater(config: CapacitorUpdaterConfig) {
         applied: true,
         bundleId: check.bundleId,
         mandatory: check.mandatory ?? true,
+        transferSource,
         releaseNotes: check.releaseNotes,
         reloadRequired: config.reloadOnSync === false,
       }

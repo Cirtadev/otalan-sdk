@@ -14,7 +14,7 @@ Use this when your app is built with Capacitor and Otalan should handle:
 - update checks through `POST /capacitor/check`
 - bundle download and staging
 - reload after install
-- install confirmation through `POST /capacitor/confirm`
+- install confirmation with transfer source through `POST /capacitor/confirm`
 
 Package docs: [capacitor/README.md](capacitor/README.md)
 
@@ -22,7 +22,7 @@ Package docs: [capacitor/README.md](capacitor/README.md)
 
 Use this when your app uses Expo or bare React Native with `expo-updates` and you only need:
 
-- startup confirmation through `POST /expo/confirm`
+- startup confirmation with transfer source through `POST /expo/confirm`
 - current update metadata
 - a small `initializeUpdater()` helper
 

@@ -85,6 +85,10 @@ function readHeader(headers: HeadersInit | undefined, name: string) {
   return new Headers(headers).get(name)
 }
 
+function readJsonBody(call: FetchCall) {
+  return JSON.parse(String(call.init?.body)) as Record<string, unknown>
+}
+
 beforeEach(() => {
   asyncStorageState.getItemCalls = []
   asyncStorageState.setItemCalls = []
@@ -152,7 +156,16 @@ describe('@otalan/expo', () => {
     const result = await updater.confirmCurrentUpdate()
 
     expect(result.confirmed).toBe(true)
+    expect(result.transferSource).toBe('downloaded')
     expect(fetchState.calls).toHaveLength(1)
+    expect(readJsonBody(fetchState.calls[0]!)).toEqual({
+      appId: 'com.example.app',
+      platform: 'ios',
+      updateId: 'update-1',
+      runtimeVersion: '1.0.0',
+      deviceId: 'device-1',
+      transferSource: 'downloaded',
+    })
   })
 
   test('confirmCurrentUpdate skips emergency launches', async () => {
@@ -193,6 +206,8 @@ describe('@otalan/expo', () => {
 
     expect(first.confirmed).toBe(true)
     expect(second.confirmed).toBe(true)
+    expect(first.transferSource).toBe('downloaded')
+    expect(second.transferSource).toBe('downloaded')
     expect(fetchState.calls).toHaveLength(1)
   })
 
@@ -202,8 +217,13 @@ describe('@otalan/expo', () => {
 
     const { initializeUpdater } = await loadSdk()
     fetchState.handler = async (_url, init) => {
-      const body = JSON.parse(String(init?.body ?? '{}')) as { deviceId?: string }
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        deviceId?: string
+        transferSource?: string
+      }
+
       expect(body.deviceId).toBe(asyncStorageState.storedValue)
+      expect(body.transferSource).toBe('downloaded')
       return Response.json({ ok: true })
     }
 

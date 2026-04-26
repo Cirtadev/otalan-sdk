@@ -11,7 +11,7 @@ This package is the full client-side orchestration layer for Otalan on Capacitor
 - downloads bundles through `@capawesome/capacitor-live-update`
 - sets the next bundle
 - reloads the app when needed
-- confirms successful installs through `POST /capacitor/confirm`
+- confirms successful installs through `POST /capacitor/confirm` with the bundle transfer source
 - provides a startup helper through `initializeUpdater()`
 
 ## What You Need
@@ -184,9 +184,16 @@ Runs the full Otalan update flow:
 2. checks Otalan
 3. skips if already current
 4. reloads immediately if the target bundle is already staged
-5. downloads only when needed
+5. downloads only when needed and records `transferSource`
 6. stages the next bundle
 7. reloads unless `reloadOnSync` is `false`
+
+When an update is applied, `CapacitorSyncResult` includes `transferSource`:
+
+- `downloaded`: the SDK called `LiveUpdate.downloadBundle()` for this bundle before staging it
+- `cached`: the SDK verified the bundle was already present on the device before attempting a download
+
+The SDK uses `downloaded` as the default. If the source marker is missing, storage is unavailable, or the SDK cannot confidently prove the bundle was cached, confirmation is sent as `downloaded`. An already-staged bundle without a recorded source is reported as `cached` only when `LiveUpdate.getDownloadedBundles()` proves it is already present on the device.
 
 ## Backend Contract
 
@@ -195,7 +202,25 @@ The backend must expose:
 - `POST /capacitor/check`
 - `POST /capacitor/confirm`
 
-`POST /capacitor/confirm` currently requires `deviceId`.
+`POST /capacitor/confirm` requires `deviceId` and `transferSource`.
+
+Confirm payload:
+
+```json
+{
+  "appId": "com.example.app",
+  "platform": "ios",
+  "bundleId": "bundle-123",
+  "deviceId": "device-1",
+  "transferSource": "downloaded"
+}
+```
+
+`transferSource` is either `downloaded` or `cached`. Use it for transfer analytics, billing, and transfer limits:
+
+- count R2 transfer usage when `transferSource` is `downloaded`
+- treat `cached` confirmations as activations without a new R2 transfer only when the SDK explicitly verified the cached source
+- keep confirmation processing idempotent per app, device, and bundle so retries do not double count usage
 
 Only active, non-archived Otalan apps are eligible for OTA checks and install confirmations. If the app is archived, `initializeUpdater()` logs the rejected request and leaves the host app running; low-level `check()` or `sync()` calls reject with the API error.
 
@@ -203,7 +228,9 @@ Only active, non-archived Otalan apps are eligible for OTA checks and install co
 
 ## Notes
 
-- repeated confirmation calls for the same installed bundle are skipped
+- repeated confirmation calls for the same installed bundle are skipped after a successful confirmation
+- failed confirmation calls are retried on a later `ready()` call
+- transfer source markers are stored until confirmation succeeds so they survive the reload between staging and activation
 - partial rollouts require a stable device ID
 - archived apps do not receive updates until they are restored in Otalan
 - production API URL is usually `https://api.otalan.com`
