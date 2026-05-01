@@ -2,6 +2,14 @@
   "name": "otalan-sdk",
   "private": true,
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Cirtadev/otalan-sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Cirtadev/otalan-sdk/issues"
+  },
+  "homepage": "https://github.com/Cirtadev/otalan-sdk#readme",
   "packageManager": "bun@1.3.12",
   "workspaces": [
     "expo",

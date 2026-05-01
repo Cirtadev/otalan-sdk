@@ -4,6 +4,15 @@
   "version": "1.0.0",
   "license": "Apache-2.0",
   "description": "Otalan OTA client SDK for Capacitor apps.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Cirtadev/otalan-sdk.git",
+    "directory": "capacitor"
+  },
+  "bugs": {
+    "url": "https://github.com/Cirtadev/otalan-sdk/issues"
+  },
+  "homepage": "https://github.com/Cirtadev/otalan-sdk/tree/master/capacitor#readme",
   "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

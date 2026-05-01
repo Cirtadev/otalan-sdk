@@ -34,6 +34,15 @@ Package docs: [expo/README.md](expo/README.md)
 
 Otalan serves OTA traffic only for active, non-archived apps. When an app is archived in Otalan, the mobile SDKs keep the host app running, but update checks and install confirmations for that app are rejected by the API until the app is restored.
 
+## Platform Support
+
+The SDK packages can be installed and used from development machines running Windows, macOS, or Linux.
+
+Runtime support is for native mobile apps:
+
+- iOS and Android apps built with Capacitor through `@otalan/capacitor`
+- iOS and Android apps using Expo or bare React Native with `expo-updates` through `@otalan/expo`
+
 ## Consumer Install
 
 You do not need Bun to use either package in an app.

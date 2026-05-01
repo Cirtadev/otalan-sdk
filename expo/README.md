@@ -8,7 +8,7 @@ This package is intentionally small. It does not replace `expo-updates`. Otalan 
 
 - exposes `initializeUpdater()` for app startup
 - reads the currently running Expo update metadata
-- optionally confirms a launched OTA update through `POST /expo/confirm` with transfer source
+- confirms eligible launched OTA updates through `POST /expo/confirm` with transfer source
 - sends the OTA app key through the `x-api-key` header on that confirm request
 
 ## What This Package Does Not Do
@@ -174,6 +174,8 @@ if (update.isAvailable) {
 
 The helper does not fetch or stage Expo updates itself, so it cannot reliably prove whether the Expo runtime loaded a cached update or a freshly downloaded one. For billing, analytics, and limits, `@otalan/expo` sends `transferSource: "downloaded"` by default on confirmation. This is the conservative source for Expo and bare React Native because cached-source detection is not available in this helper.
 
+Unlike `@otalan/capacitor`, this package does not report `cached` confirmations. The Capacitor SDK controls the bundle download/staging flow and can ask the live-update plugin whether a bundle already exists on the device. The Expo helper only observes the currently launched update through `expo-updates`, so it cannot distinguish a cached launch from a freshly downloaded launch with enough confidence.
+
 ## Startup Helper Behavior
 
 `initializeUpdater()`:
@@ -183,6 +185,7 @@ The helper does not fetch or stage Expo updates itself, so it cannot reliably pr
 - creates and persists a stable `deviceId` unless you provide one
 - no-ops outside native iOS and Android
 - no-ops when `expo-updates` is disabled
+- no-ops when `apiUrl` or `apiKey` are missing
 - swallows confirmation failures and logs warnings instead
 
 ## API
@@ -251,9 +254,11 @@ The backend must expose:
 
 - an `expo-updates` compatible manifest endpoint
 - authenticated asset routes referenced by that manifest
-- optional `POST /expo/confirm`
+- `POST /expo/confirm` when confirmation tracking is enabled
 
 `POST /expo/confirm` requires `deviceId` and `transferSource`.
+
+The SDK calls `POST /expo/confirm` by default for eligible launched OTA updates. If you do not expose this endpoint, disable confirmation with `autoConfirm: false` or expect warning logs and missing confirmation analytics.
 
 Confirm payload:
 
