@@ -33,6 +33,36 @@ const fetchState = {
   },
 }
 
+const liveUpdateMock = {
+  ready: async () => capacitorState.readyResult,
+  getVersionName: async () => ({ versionName: capacitorState.versionName }),
+  getCurrentBundle: async () => capacitorState.currentBundle,
+  getNextBundle: async () => capacitorState.nextBundle,
+  getDownloadedBundles: async () => {
+    if (capacitorState.getDownloadedBundlesError) {
+      throw capacitorState.getDownloadedBundlesError
+    }
+
+    return { bundleIds: [...capacitorState.downloadedBundles] }
+  },
+  getBundles: async () => {
+    if (capacitorState.getDownloadedBundlesError) {
+      throw capacitorState.getDownloadedBundlesError
+    }
+
+    return { bundleIds: [...capacitorState.downloadedBundles] }
+  },
+  downloadBundle: async (input: { url: string; bundleId: string; checksum?: string }) => {
+    capacitorState.downloadCalls.push(input)
+  },
+  setNextBundle: async (input: { bundleId: string }) => {
+    capacitorState.setNextCalls.push(input)
+  },
+  reload: async () => {
+    capacitorState.reloadCalls += 1
+  },
+}
+
 // -----------------------------------------------------------------------------
 // Module Mocks
 // -----------------------------------------------------------------------------
@@ -52,28 +82,7 @@ mock.module('@capacitor/core', () => ({
 }))
 
 mock.module('@capawesome/capacitor-live-update', () => ({
-  LiveUpdate: {
-    ready: async () => capacitorState.readyResult,
-    getVersionName: async () => ({ versionName: capacitorState.versionName }),
-    getCurrentBundle: async () => capacitorState.currentBundle,
-    getNextBundle: async () => capacitorState.nextBundle,
-    getDownloadedBundles: async () => {
-      if (capacitorState.getDownloadedBundlesError) {
-        throw capacitorState.getDownloadedBundlesError
-      }
-
-      return { bundleIds: [...capacitorState.downloadedBundles] }
-    },
-    downloadBundle: async (input: { url: string; bundleId: string; checksum?: string }) => {
-      capacitorState.downloadCalls.push(input)
-    },
-    setNextBundle: async (input: { bundleId: string }) => {
-      capacitorState.setNextCalls.push(input)
-    },
-    reload: async () => {
-      capacitorState.reloadCalls += 1
-    },
-  },
+  LiveUpdate: liveUpdateMock,
 }))
 
 const { createUpdater } = await import('../src/index')
@@ -163,6 +172,13 @@ beforeEach(() => {
   capacitorState.downloadCalls = []
   capacitorState.setNextCalls = []
   capacitorState.reloadCalls = 0
+  liveUpdateMock.getDownloadedBundles = async () => {
+    if (capacitorState.getDownloadedBundlesError) {
+      throw capacitorState.getDownloadedBundlesError
+    }
+
+    return { bundleIds: [...capacitorState.downloadedBundles] }
+  }
 
   fetchState.calls = []
   fetchState.handler = async (url: string, init?: RequestInit) => {
@@ -488,6 +504,42 @@ describe('@otalan/capacitor', () => {
       deviceId: 'device-1',
       transferSource: 'cached',
     })
+  })
+
+  test('sync supports legacy bundle listing for Capacitor 7 live update plugins', async () => {
+    capacitorState.currentBundle = { bundleId: 'bundle-current' }
+    capacitorState.downloadedBundles = ['bundle-next']
+    liveUpdateMock.getDownloadedBundles = undefined as unknown as typeof liveUpdateMock.getDownloadedBundles
+
+    fetchState.handler = async (url) => {
+      if (url.endsWith('/capacitor/check')) {
+        return Response.json({
+          updateAvailable: true,
+          bundleId: 'bundle-next',
+          downloadUrl: 'https://cdn.example.com/bundle-next.zip',
+          mandatory: true,
+        })
+      }
+
+      return new Response(null, { status: 204 })
+    }
+
+    const updater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      deviceId: 'device-1',
+    })
+
+    const result = await updater.sync()
+
+    expect(result).toMatchObject({
+      updateAvailable: true,
+      bundleId: 'bundle-next',
+      transferSource: 'cached',
+    })
+    expect(capacitorState.downloadCalls).toHaveLength(0)
   })
 
   test('sync treats cache probe failures as downloaded', async () => {

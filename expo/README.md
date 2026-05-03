@@ -25,6 +25,18 @@ This package is intentionally small. It does not replace `expo-updates`. Otalan 
 - a working Otalan `expo-updates` endpoint
 - an Otalan OTA app key
 
+## Supported Versions
+
+This package supports Expo SDK 54 and 55:
+
+- Expo SDK 54 through `expo-updates >=29.0.0 <30`
+- Expo SDK 55 through `expo-updates >=55.0.0 <56`
+- bare React Native 0.84 and 0.85 with a compatible `expo-updates` setup
+
+The `react-native` peer dependency also accepts the React Native versions bundled by supported Expo SDKs: React Native 0.81 for Expo SDK 54 and React Native 0.83 for Expo SDK 55. Those versions are accepted for Expo apps only; bare React Native support is limited to React Native 0.84 and 0.85.
+
+Older versions may work, but they are outside the supported range. We do not offer support for unsupported versions and do not take responsibility for issues caused by using them.
+
 ## Install
 
 You do not need Bun to use this package in your app.

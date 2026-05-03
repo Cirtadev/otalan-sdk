@@ -239,4 +239,20 @@ describe('@otalan/expo', () => {
     expect(asyncStorageState.setItemCalls[0]?.value.startsWith('otalan-expo-')).toBe(true)
     expect(fetchState.calls).toHaveLength(1)
   })
+
+  test('initializeUpdater no-ops when required credentials are empty', async () => {
+    const { initializeUpdater } = await loadSdk()
+
+    const updater = await initializeUpdater({
+      apiUrl: '',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+    })
+
+    expect(updater.getUpdater()).toBeNull()
+    expect(await updater.ready()).toBeNull()
+    expect(asyncStorageState.getItemCalls).toHaveLength(0)
+    expect(asyncStorageState.setItemCalls).toHaveLength(0)
+    expect(fetchState.calls).toHaveLength(0)
+  })
 })

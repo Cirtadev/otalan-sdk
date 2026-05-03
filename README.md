@@ -43,6 +43,16 @@ Runtime support is for native mobile apps:
 - iOS and Android apps built with Capacitor through `@otalan/capacitor`
 - iOS and Android apps using Expo or bare React Native with `expo-updates` through `@otalan/expo`
 
+## Version Support
+
+- `@otalan/capacitor` supports Capacitor 8 and Capacitor 7.
+- `@otalan/expo` supports Expo SDK 54 and 55.
+- Bare React Native support covers React Native 0.84 and 0.85 when paired with a compatible `expo-updates` setup.
+
+See each package README for exact peer dependency ranges.
+
+Older versions may work, but they are outside the supported range. We do not offer support for unsupported versions and do not take responsibility for issues caused by using them.
+
 ## Consumer Install
 
 You do not need Bun to use either package in an app.
@@ -58,7 +68,7 @@ Peer dependencies are documented in each package README.
 
 ## Repo Development
 
-Bun is required to build and validate this repo.
+Bun 1.3.11 or newer is required to build and validate this repo.
 
 ```bash
 bun install

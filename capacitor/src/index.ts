@@ -22,6 +22,16 @@ type OtaPlatform = 'ios' | 'android'
 
 export type CapacitorTransferSource = 'downloaded' | 'cached'
 
+type BundleListResult = {
+  bundleIds: string[]
+}
+
+const BUNDLE_LIST_METHODS = ['getDownloadedBundles', 'getBundles'] as const
+
+type BundleListMethod = typeof BUNDLE_LIST_METHODS[number]
+
+type BundleListProvider = Partial<Record<BundleListMethod, () => Promise<BundleListResult>>>
+
 export type CapacitorUpdaterConfig = {
   apiUrl: string
   apiKey: string
@@ -251,8 +261,17 @@ async function confirmInstall(config: CapacitorUpdaterConfig, input: {
 }
 
 async function hasDownloadedBundle(bundleId: string) {
-  const result = await LiveUpdate.getDownloadedBundles()
-  return result.bundleIds.includes(bundleId)
+  const liveUpdate = LiveUpdate as BundleListProvider
+
+  for (const method of BUNDLE_LIST_METHODS) {
+    const listBundles = liveUpdate[method]
+    if (listBundles) {
+      const result = await listBundles()
+      return result.bundleIds.includes(bundleId)
+    }
+  }
+
+  throw new Error('Installed @capawesome/capacitor-live-update does not expose bundle listing APIs.')
 }
 
 async function hasDownloadedBundleSafely(bundleId: string) {

@@ -25,6 +25,23 @@ This package is the full client-side orchestration layer for Otalan on Capacitor
 
 Use the OTA app key in the app. Do not use a CI key in frontend code.
 
+## Supported Versions
+
+This package supports Capacitor 8 and Capacitor 7:
+
+- `@capacitor/core >=7.0.0 <9`
+- `@capacitor/app >=7.0.0 <9`
+- `@capawesome/capacitor-live-update >=7.0.0 <9`
+
+Use the matching Capawesome Live Update major for your Capacitor major:
+
+- Capacitor 7 with `@capawesome/capacitor-live-update` 7.x
+- Capacitor 8 with `@capawesome/capacitor-live-update` 8.x
+
+Capacitor 8 is the current upstream major. Capacitor 7 is included for the upstream maintenance window. Capacitor 6 is not in the public support range because it is no longer in upstream community support, even though the SDK code keeps the compatibility fallback used by older Live Update APIs.
+
+Older versions may work, but they are outside the supported range. We do not offer support for unsupported versions and do not take responsibility for issues caused by using them.
+
 ## Install
 
 You do not need Bun to use this package in your app.
@@ -193,7 +210,7 @@ When an update is applied, `CapacitorSyncResult` includes `transferSource`:
 - `downloaded`: the SDK called `LiveUpdate.downloadBundle()` for this bundle before staging it
 - `cached`: the SDK verified the bundle was already present on the device before attempting a download
 
-The SDK uses `downloaded` as the default. If the source marker is missing, storage is unavailable, or the SDK cannot confidently prove the bundle was cached, confirmation is sent as `downloaded`. An already-staged bundle without a recorded source is reported as `cached` only when `LiveUpdate.getDownloadedBundles()` proves it is already present on the device.
+The SDK uses `downloaded` as the default. If the source marker is missing, storage is unavailable, or the SDK cannot confidently prove the bundle was cached, confirmation is sent as `downloaded`. An already-staged bundle without a recorded source is reported as `cached` only when the installed Live Update plugin's bundle-listing API proves it is already present on the device.
 
 ## Backend Contract
 
