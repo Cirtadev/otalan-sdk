@@ -200,6 +200,8 @@ Unlike `@otalan/capacitor`, this package does not report `cached` confirmations.
 - no-ops when `apiUrl` or `apiKey` are missing
 - swallows confirmation failures and logs warnings instead
 
+If startup logs `Otalan install confirmation failed.`, the failure happened during `POST /expo/confirm`. The SDK logs a serializable `{ sdkName, sdkVersion, name, message }` error payload so native consoles can show the installed SDK version, HTTP status, API message, or fetch failure instead of an empty `{}`.
+
 ## API
 
 ### `createUpdater(config)`
@@ -229,6 +231,13 @@ Returns:
 
 - `getUpdater()`: returns the helper or `null`
 - `ready()`: runs startup confirmation and returns `ExpoReadyResult | null`
+
+### Package Metadata Exports
+
+- `OTALAN_EXPO_SDK_NAME`: package name read from `@otalan/expo`'s `package.json`
+- `OTALAN_EXPO_SDK_VERSION`: package version read from `@otalan/expo`'s `package.json`
+
+These values are included in SDK warning logs.
 
 ### `await updater.getCurrentUpdate()`
 
@@ -299,3 +308,4 @@ Only active, non-archived Otalan apps are eligible for Expo updates and install 
 - Expo and bare React Native confirmations use `downloaded` as the transfer source default
 - archived apps do not receive updates until they are restored in Otalan
 - production API URL is usually `https://api.otalan.com`
+- local development API URLs must be reachable from the native runtime. Physical devices usually need your machine's LAN IP, Android emulators usually need `10.0.2.2`, and plain HTTP may require platform cleartext/ATS development settings.

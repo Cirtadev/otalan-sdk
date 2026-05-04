@@ -2,6 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { Platform } from 'react-native'
 import * as Updates from 'expo-updates'
 
+import packageJson from '../package.json' with { type: 'json' }
+
 // -----------------------------------------------------------------------------
 // Types
 // -----------------------------------------------------------------------------
@@ -52,6 +54,14 @@ export type InitializedExpoUpdater = {
 
 const DEFAULT_DEVICE_ID_STORAGE_KEY = 'otalan-device-id'
 const DEFAULT_TRANSFER_SOURCE: ExpoTransferSource = 'downloaded'
+
+export const OTALAN_EXPO_SDK_NAME = packageJson.name
+export const OTALAN_EXPO_SDK_VERSION = packageJson.version
+
+const SDK_LOG_CONTEXT = {
+  sdkName: OTALAN_EXPO_SDK_NAME,
+  sdkVersion: OTALAN_EXPO_SDK_VERSION,
+}
 
 function joinUrl(base: string, pathname: string) {
   return `${base.replace(/\/+$/, '')}/${pathname.replace(/^\/+/, '')}`
@@ -127,15 +137,89 @@ async function postJson(url: string, body: unknown, headers: HeadersInit) {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
+  }).catch((error) => {
+    throw buildRequestFailureError(url, error)
   })
 
   if (!response.ok) {
+    throw new Error(buildHttpErrorMessage(url, response, await readErrorResponseMessage(response)))
+  }
+}
+
+async function readErrorResponseMessage(response: Response) {
+  const contentType = response.headers.get('content-type') ?? ''
+
+  if (contentType.includes('application/json')) {
     const payload = await response.json().catch(() => ({})) as {
       message?: string
     }
 
-    throw new Error(payload.message ?? `Request failed with status ${response.status}`)
+    return payload.message
   }
+
+  const body = await response.text().catch(() => '')
+  return body.trim() || undefined
+}
+
+function buildHttpErrorMessage(url: string, response: Response, message?: string) {
+  const statusMessage = `POST ${url} failed with status ${response.status}`
+  return message ? `${statusMessage}: ${message}` : statusMessage
+}
+
+function buildRequestFailureError(url: string, error: unknown) {
+  return new Error(`POST ${url} failed before response: ${readErrorMessage(error)}`, {
+    cause: error,
+  })
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function readStringField(value: Record<string, unknown>, field: string) {
+  const fieldValue = value[field]
+  return typeof fieldValue === 'string' && fieldValue ? fieldValue : undefined
+}
+
+function readCodeField(value: Record<string, unknown>) {
+  const code = value.code
+  return typeof code === 'string' || typeof code === 'number' ? code : undefined
+}
+
+function serializeErrorForLog(error: unknown): unknown {
+  if (!isRecord(error)) {
+    return {
+      ...SDK_LOG_CONTEXT,
+      message: String(error),
+    }
+  }
+
+  const name = error instanceof Error ? error.name : readStringField(error, 'name')
+  const message = error instanceof Error ? error.message : readStringField(error, 'message')
+  const code = readCodeField(error)
+  const cause = 'cause' in error ? serializeErrorForLog(error.cause) : undefined
+
+  if (!name && !message && code === undefined && cause === undefined) {
+    return {
+      ...SDK_LOG_CONTEXT,
+      value: error,
+    }
+  }
+
+  return {
+    ...SDK_LOG_CONTEXT,
+    ...(name ? { name } : {}),
+    message: message ?? String(error),
+    ...(code !== undefined ? { code } : {}),
+    ...(cause !== undefined ? { cause } : {}),
+  }
+}
+
+function readErrorMessage(error: unknown) {
+  const serialized = serializeErrorForLog(error)
+  return isRecord(serialized) && typeof serialized.message === 'string'
+    ? serialized.message
+    : String(error)
 }
 
 // -----------------------------------------------------------------------------
@@ -187,7 +271,7 @@ export async function initializeUpdater(
     }
 
     readyPromise = currentUpdater.ready().catch((error) => {
-      logger.warn('Otalan initializeUpdater() failed.', error)
+      logger.warn('Otalan initializeUpdater() failed.', serializeErrorForLog(error))
       return null
     }).finally(() => {
       readyPromise = null
@@ -210,85 +294,89 @@ export function createUpdater(config: ExpoUpdaterConfig) {
   const deviceId = requireDeviceId(config)
   let confirmedUpdateId: string | null = null
 
-  return {
-    async getCurrentUpdate() {
-      if (!Updates.isEnabled) {
-        return {
-          enabled: false,
-          confirmed: false,
-          isEmbeddedLaunch: false,
-          isEmergencyLaunch: false,
-        } satisfies ExpoReadyResult
-      }
-
+  async function getCurrentUpdate() {
+    if (!Updates.isEnabled) {
       return {
-        enabled: true,
+        enabled: false,
         confirmed: false,
-        isEmbeddedLaunch: Updates.isEmbeddedLaunch,
-        isEmergencyLaunch: Updates.isEmergencyLaunch,
-        runtimeVersion: Updates.runtimeVersion ?? undefined,
-        updateId: Updates.updateId ?? undefined,
+        isEmbeddedLaunch: false,
+        isEmergencyLaunch: false,
       } satisfies ExpoReadyResult
-    },
+    }
 
-    async confirmCurrentUpdate() {
-      const current = await this.getCurrentUpdate()
+    return {
+      enabled: true,
+      confirmed: false,
+      isEmbeddedLaunch: Updates.isEmbeddedLaunch,
+      isEmergencyLaunch: Updates.isEmergencyLaunch,
+      runtimeVersion: Updates.runtimeVersion ?? undefined,
+      updateId: Updates.updateId ?? undefined,
+    } satisfies ExpoReadyResult
+  }
 
-      if (!current.enabled) {
-        return current
-      }
+  async function confirmCurrentUpdate() {
+    const current = await getCurrentUpdate()
 
-      if (!config.autoConfirm && config.autoConfirm !== undefined) {
-        return current
-      }
+    if (!current.enabled) {
+      return current
+    }
 
-      if (!current.updateId) {
-        return current
-      }
+    if (!config.autoConfirm && config.autoConfirm !== undefined) {
+      return current
+    }
 
-      if (current.isEmergencyLaunch) {
-        return current
-      }
+    if (!current.updateId) {
+      return current
+    }
 
-      if (current.isEmbeddedLaunch) {
-        return current
-      }
+    if (current.isEmergencyLaunch) {
+      return current
+    }
 
-      if (current.updateId === confirmedUpdateId) {
-        return {
-          ...current,
-          confirmed: true,
-          transferSource: DEFAULT_TRANSFER_SOURCE,
-        } satisfies ExpoReadyResult
-      }
+    if (current.isEmbeddedLaunch) {
+      return current
+    }
 
-      await postJson(
-        joinUrl(config.apiUrl, '/expo/confirm'),
-        {
-          appId: config.appId,
-          platform: resolvePlatform(),
-          updateId: current.updateId,
-          runtimeVersion: current.runtimeVersion,
-          deviceId,
-          transferSource: DEFAULT_TRANSFER_SOURCE,
-        },
-        buildHeaders(config),
-      )
-
-      confirmedUpdateId = current.updateId
-
+    if (current.updateId === confirmedUpdateId) {
       return {
         ...current,
         confirmed: true,
         transferSource: DEFAULT_TRANSFER_SOURCE,
       } satisfies ExpoReadyResult
-    },
+    }
 
-    async ready() {
-      return this.confirmCurrentUpdate().catch((error) => {
-        logger.warn('Otalan install confirmation failed.', error)
-        return this.getCurrentUpdate()
-      })
-    },
+    await postJson(
+      joinUrl(config.apiUrl, '/expo/confirm'),
+      {
+        appId: config.appId,
+        platform: resolvePlatform(),
+        updateId: current.updateId,
+        runtimeVersion: current.runtimeVersion,
+        deviceId,
+        transferSource: DEFAULT_TRANSFER_SOURCE,
+      },
+      buildHeaders(config),
+    )
+
+    confirmedUpdateId = current.updateId
+
+    return {
+      ...current,
+      confirmed: true,
+      transferSource: DEFAULT_TRANSFER_SOURCE,
+    } satisfies ExpoReadyResult
+  }
+
+  async function ready() {
+    return confirmCurrentUpdate().catch((error) => {
+      logger.warn('Otalan install confirmation failed.', serializeErrorForLog(error))
+      return getCurrentUpdate()
+    })
+  }
+
+  return {
+    getCurrentUpdate,
+    confirmCurrentUpdate,
+    ready,
   }
 }

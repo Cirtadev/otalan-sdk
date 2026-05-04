@@ -14,6 +14,8 @@ This package is the full client-side orchestration layer for Otalan on Capacitor
 - confirms successful installs through `POST /capacitor/confirm` with the bundle transfer source
 - provides a startup helper through `initializeUpdater()`
 
+The SDK uses Capacitor's native HTTP transport for Otalan API calls on iOS and Android, with browser `fetch()` kept as the non-native fallback.
+
 ## What You Need
 
 - a Capacitor app
@@ -148,6 +150,13 @@ await updater.sync()
 - can register a resume listener
 - deduplicates concurrent sync calls
 - swallows sync failures and logs warnings instead
+- keeps install confirmation best-effort during sync so a slow `POST /capacitor/confirm` cannot block the next update check
+
+On a fresh native install, `LiveUpdate.getCurrentBundle()` and `LiveUpdate.getNextBundle()` can both return `null` bundle IDs. That is normal before the device has activated or staged an OTA bundle.
+
+If startup or resume sync logs `[ota] ... sync failed`, the failure happened after the Live Update state checks, usually during `POST /capacitor/check` or bundle download/staging. The SDK logs a serializable `{ sdkName, sdkVersion, name, message }` error payload so native consoles can show the installed SDK version, HTTP status, API message, plugin operation, or fetch failure instead of an empty `{}`.
+
+If the message says `failed before response`, the request did not receive an HTTP response. Check that `apiUrl` is reachable from the device, uses a trusted certificate, and is allowed by platform HTTP security settings.
 
 ## API
 
@@ -180,6 +189,13 @@ Returns:
 
 - `getUpdater()`: resolves the low-level updater or `null`
 - `sync(trigger?)`: runs a deduplicated sync and returns `CapacitorSyncResult | null`
+
+### Package Metadata Exports
+
+- `OTALAN_CAPACITOR_SDK_NAME`: package name read from `@otalan/capacitor`'s `package.json`
+- `OTALAN_CAPACITOR_SDK_VERSION`: package version read from `@otalan/capacitor`'s `package.json`
+
+These values are included in SDK warning logs.
 
 ### `await updater.ready()`
 
@@ -251,4 +267,4 @@ Only active, non-archived Otalan apps are eligible for OTA checks and install co
 - partial rollouts require a stable device ID
 - archived apps do not receive updates until they are restored in Otalan
 - production API URL is usually `https://api.otalan.com`
-- local development API URL is usually `http://localhost:8787`
+- local development API URL is usually `http://localhost:8787` only when the native runtime can reach that host. Physical devices usually need your machine's LAN IP, Android emulators usually need `10.0.2.2`, and plain HTTP may require platform cleartext/ATS development settings.

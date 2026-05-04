@@ -1,0 +1,19 @@
+# Changelog
+
+## 1.0.0 - 2026-05-04
+
+Initial public release of `@otalan/capacitor`.
+
+### Added
+
+- Added Capacitor OTA checks, bundle download and staging, reloads, and install confirmation.
+- Added transfer source reporting for downloaded and cached Capacitor bundles.
+- Added package support ranges for Capacitor 7 and 8.
+
+### Changed
+
+- Switched Otalan API calls to Capacitor's native HTTP transport on iOS and Android.
+- Kept install confirmation best-effort during sync so confirming the current bundle cannot block checks for newer bundles.
+- Improved updater warning logs so native consoles show serializable error details for failed sync and confirmation calls.
+- Added SDK package name and version to warning logs and included Live Update operation context for plugin failures.
+- Documented first-install `null` bundle IDs and native local development API URL caveats.

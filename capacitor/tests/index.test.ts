@@ -9,6 +9,13 @@ type FetchCall = {
   init?: RequestInit
 }
 
+type CapacitorHttpPostInput = {
+  url: string
+  headers?: Record<string, string>
+  data?: unknown
+  responseType?: string
+}
+
 const capacitorState = {
   appId: 'com.example.app',
   isNativePlatform: true,
@@ -16,6 +23,7 @@ const capacitorState = {
   currentBundle: { bundleId: undefined as string | undefined },
   nextBundle: { bundleId: undefined as string | undefined },
   downloadedBundles: [] as string[],
+  downloadBundleError: null as Error | null,
   getDownloadedBundlesError: null as Error | null,
   versionName: '1.0.0',
   readyResult: { currentBundleId: undefined as string | undefined },
@@ -31,6 +39,10 @@ const fetchState = {
     void init
     return new Response('not mocked', { status: 500 })
   },
+}
+
+const capacitorHttpState = {
+  calls: [] as CapacitorHttpPostInput[],
 }
 
 const liveUpdateMock = {
@@ -54,6 +66,10 @@ const liveUpdateMock = {
   },
   downloadBundle: async (input: { url: string; bundleId: string; checksum?: string }) => {
     capacitorState.downloadCalls.push(input)
+
+    if (capacitorState.downloadBundleError) {
+      throw capacitorState.downloadBundleError
+    }
   },
   setNextBundle: async (input: { bundleId: string }) => {
     capacitorState.setNextCalls.push(input)
@@ -79,13 +95,39 @@ mock.module('@capacitor/core', () => ({
     getPlatform: () => capacitorState.platform,
     isNativePlatform: () => capacitorState.isNativePlatform,
   },
+  CapacitorHttp: {
+    post: async (input: CapacitorHttpPostInput) => {
+      capacitorHttpState.calls.push(input)
+      fetchState.calls.push({
+        url: input.url,
+        init: {
+          method: 'POST',
+          headers: input.headers,
+          body: JSON.stringify(input.data),
+        },
+      })
+
+      const response = await fetchState.handler(input.url, {
+        method: 'POST',
+        headers: input.headers,
+        body: JSON.stringify(input.data),
+      })
+
+      return responseToNativeHttpResponse(response, input.url)
+    },
+  },
 }))
 
 mock.module('@capawesome/capacitor-live-update', () => ({
   LiveUpdate: liveUpdateMock,
 }))
 
-const { createUpdater } = await import('../src/index')
+const {
+  OTALAN_CAPACITOR_SDK_NAME,
+  OTALAN_CAPACITOR_SDK_VERSION,
+  createUpdater,
+  initializeUpdater,
+} = await import('../src/index')
 
 // -----------------------------------------------------------------------------
 // Test Helpers
@@ -157,6 +199,27 @@ function readJsonBody(call: FetchCall) {
   return JSON.parse(String(call.init?.body)) as Record<string, unknown>
 }
 
+async function responseToNativeHttpResponse(response: Response, url: string) {
+  const headers: Record<string, string> = {}
+  response.headers.forEach((value, key) => {
+    headers[key] = value
+  })
+
+  const contentType = response.headers.get('content-type') ?? ''
+  const data = response.status === 204 || response.status === 205
+    ? undefined
+    : contentType.includes('application/json')
+      ? await response.json().catch(() => undefined)
+      : await response.text().catch(() => undefined)
+
+  return {
+    data,
+    status: response.status,
+    headers,
+    url,
+  }
+}
+
 beforeEach(() => {
   installMemoryLocalStorage()
 
@@ -166,6 +229,7 @@ beforeEach(() => {
   capacitorState.currentBundle = { bundleId: undefined }
   capacitorState.nextBundle = { bundleId: undefined }
   capacitorState.downloadedBundles = []
+  capacitorState.downloadBundleError = null
   capacitorState.getDownloadedBundlesError = null
   capacitorState.versionName = '1.0.0'
   capacitorState.readyResult = { currentBundleId: undefined }
@@ -186,6 +250,7 @@ beforeEach(() => {
     void init
     return new Response('not mocked', { status: 500 })
   }
+  capacitorHttpState.calls = []
 
   globalThis.fetch = (async (input, init) => {
     fetchState.calls.push({
@@ -207,6 +272,16 @@ afterAll(() => {
 // -----------------------------------------------------------------------------
 
 describe('@otalan/capacitor', () => {
+  test('exports the package version used in native logs', async () => {
+    const packageJson = await Bun.file(new URL('../package.json', import.meta.url)).json() as {
+      name: string
+      version: string
+    }
+
+    expect(OTALAN_CAPACITOR_SDK_NAME).toBe(packageJson.name)
+    expect(OTALAN_CAPACITOR_SDK_VERSION).toBe(packageJson.version)
+  })
+
   test('check supports Headers instances in custom request headers', async () => {
     fetchState.handler = async (_url, init) => {
       expect(readHeader(init?.headers, 'content-type')).toBe('application/json')
@@ -232,6 +307,129 @@ describe('@otalan/capacitor', () => {
 
     expect(result).toEqual({ updateAvailable: false })
     expect(fetchState.calls).toHaveLength(1)
+    expect(capacitorHttpState.calls).toHaveLength(1)
+    expect(capacitorHttpState.calls[0]?.responseType).toBe('json')
+  })
+
+  test('check falls back to fetch outside native platforms', async () => {
+    capacitorState.isNativePlatform = false
+
+    fetchState.handler = async (_url, init) => {
+      expect(readHeader(init?.headers, 'content-type')).toBe('application/json')
+      return Response.json({ updateAvailable: false })
+    }
+
+    const updater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      nativeVersion: '1.0.0',
+      platform: 'ios',
+      deviceId: 'device-1',
+    })
+
+    const result = await updater.check()
+
+    expect(result).toEqual({ updateAvailable: false })
+    expect(fetchState.calls).toHaveLength(1)
+    expect(capacitorHttpState.calls).toHaveLength(0)
+  })
+
+  test('check parses native HTTP JSON strings without JSON response headers', async () => {
+    fetchState.handler = async () => new Response(JSON.stringify({ updateAvailable: false }), {
+      headers: {
+        'content-type': 'text/plain',
+      },
+    })
+
+    const updater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      deviceId: 'device-1',
+    })
+
+    const result = await updater.check()
+
+    expect(result).toEqual({ updateAvailable: false })
+  })
+
+  test('check includes request context when the API rejects the request', async () => {
+    fetchState.handler = async () => Response.json({ message: 'invalid OTA key' }, { status: 401 })
+
+    const updater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      deviceId: 'device-1',
+    })
+
+    await expect(updater.check()).rejects.toThrow(
+      'POST https://api.otalan.com/capacitor/check failed with status 401: invalid OTA key',
+    )
+  })
+
+  test('initializeUpdater logs serializable sync errors for native consoles', async () => {
+    fetchState.handler = async () => Response.json({ message: 'app is archived' }, { status: 403 })
+
+    const logger = createLogger()
+
+    await initializeUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      channel: 'production',
+      deviceId: 'device-1',
+      logger: logger.logger,
+    })
+
+    expect(logger.warnCalls).toEqual([
+      [
+        '[ota] launch sync failed',
+        {
+          sdkName: OTALAN_CAPACITOR_SDK_NAME,
+          sdkVersion: OTALAN_CAPACITOR_SDK_VERSION,
+          name: 'Error',
+          message: 'POST https://api.otalan.com/capacitor/check failed with status 403: app is archived',
+        },
+      ],
+    ])
+  })
+
+  test('initializeUpdater logs the request URL when native HTTP fails before a response', async () => {
+    fetchState.handler = async () => {
+      throw new TypeError('Load failed')
+    }
+
+    const logger = createLogger()
+
+    await initializeUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      channel: 'production',
+      deviceId: 'device-1',
+      logger: logger.logger,
+    })
+
+    expect(logger.warnCalls).toEqual([
+      [
+        '[ota] launch sync failed',
+        {
+          sdkName: OTALAN_CAPACITOR_SDK_NAME,
+          sdkVersion: OTALAN_CAPACITOR_SDK_VERSION,
+          name: 'Error',
+          message: 'POST https://api.otalan.com/capacitor/check failed before response: Load failed',
+          cause: {
+            sdkName: OTALAN_CAPACITOR_SDK_NAME,
+            sdkVersion: OTALAN_CAPACITOR_SDK_VERSION,
+            name: 'TypeError',
+            message: 'Load failed',
+          },
+        },
+      ],
+    ])
   })
 
   test('ready handles empty successful confirm responses without warning', async () => {
@@ -260,6 +458,44 @@ describe('@otalan/capacitor', () => {
       transferSource: 'downloaded',
     })
     expect(logger.warnCalls).toHaveLength(0)
+  })
+
+  test('ready logs the confirm URL and SDK version when confirmation fails before a response', async () => {
+    capacitorState.readyResult = { currentBundleId: '1.0.0-2' }
+
+    fetchState.handler = async () => {
+      throw new TypeError('Load failed')
+    }
+
+    const logger = createLogger()
+    const updater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'app.cryptosan.app',
+      channel: 'production',
+      deviceId: 'device-1',
+      logger: logger.logger,
+    })
+
+    await updater.ready()
+
+    expect(logger.warnCalls).toEqual([
+      [
+        'Otalan install confirmation failed.',
+        {
+          sdkName: OTALAN_CAPACITOR_SDK_NAME,
+          sdkVersion: OTALAN_CAPACITOR_SDK_VERSION,
+          name: 'Error',
+          message: 'POST https://api.otalan.com/capacitor/confirm failed before response: Load failed',
+          cause: {
+            sdkName: OTALAN_CAPACITOR_SDK_NAME,
+            sdkVersion: OTALAN_CAPACITOR_SDK_VERSION,
+            name: 'TypeError',
+            message: 'Load failed',
+          },
+        },
+      ],
+    ])
   })
 
   test('ready confirms a bundle only once for the same current bundle id', async () => {
@@ -375,6 +611,26 @@ describe('@otalan/capacitor', () => {
     expect(capacitorState.downloadCalls).toHaveLength(0)
     expect(capacitorState.setNextCalls).toHaveLength(0)
     expect(capacitorState.reloadCalls).toBe(0)
+  })
+
+  test('sync works when destructured from the updater object', async () => {
+    fetchState.handler = async (url) => {
+      if (url.endsWith('/capacitor/check')) {
+        return Response.json({ updateAvailable: false })
+      }
+
+      return new Response(null, { status: 204 })
+    }
+
+    const { sync } = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      deviceId: 'device-1',
+    })
+
+    await expect(sync()).resolves.toEqual({ updateAvailable: false })
   })
 
   test('sync records downloaded transfer source for the next confirm', async () => {

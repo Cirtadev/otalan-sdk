@@ -89,6 +89,19 @@ function readJsonBody(call: FetchCall) {
   return JSON.parse(String(call.init?.body)) as Record<string, unknown>
 }
 
+function createLogger() {
+  const warnCalls: unknown[][] = []
+
+  return {
+    warnCalls,
+    logger: {
+      warn: (...args: unknown[]) => {
+        warnCalls.push(args)
+      },
+    },
+  }
+}
+
 beforeEach(() => {
   asyncStorageState.getItemCalls = []
   asyncStorageState.setItemCalls = []
@@ -132,6 +145,20 @@ afterAll(() => {
 // -----------------------------------------------------------------------------
 
 describe('@otalan/expo', () => {
+  test('exports the package version used in native logs', async () => {
+    const packageJson = await Bun.file(new URL('../package.json', import.meta.url)).json() as {
+      name: string
+      version: string
+    }
+    const {
+      OTALAN_EXPO_SDK_NAME,
+      OTALAN_EXPO_SDK_VERSION,
+    } = await loadSdk()
+
+    expect(OTALAN_EXPO_SDK_NAME).toBe(packageJson.name)
+    expect(OTALAN_EXPO_SDK_VERSION).toBe(packageJson.version)
+  })
+
   test('confirmCurrentUpdate supports tuple arrays in custom request headers', async () => {
     fetchState.handler = async (_url, init) => {
       expect(readHeader(init?.headers, 'content-type')).toBe('application/json')
@@ -166,6 +193,89 @@ describe('@otalan/expo', () => {
       deviceId: 'device-1',
       transferSource: 'downloaded',
     })
+  })
+
+  test('confirmCurrentUpdate includes request context when the API rejects the request', async () => {
+    fetchState.handler = async () => Response.json({ message: 'invalid OTA key' }, { status: 401 })
+
+    const { createUpdater } = await loadSdk()
+    const updater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      deviceId: 'device-1',
+    })
+
+    await expect(updater.confirmCurrentUpdate()).rejects.toThrow(
+      'POST https://api.otalan.com/expo/confirm failed with status 401: invalid OTA key',
+    )
+  })
+
+  test('confirmCurrentUpdate includes request context when fetch fails before a response', async () => {
+    fetchState.handler = async () => {
+      throw new TypeError('Load failed')
+    }
+
+    const { createUpdater } = await loadSdk()
+    const updater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      deviceId: 'device-1',
+    })
+
+    await expect(updater.confirmCurrentUpdate()).rejects.toThrow(
+      'POST https://api.otalan.com/expo/confirm failed before response: Load failed',
+    )
+  })
+
+  test('ready logs serializable confirmation errors for native consoles', async () => {
+    fetchState.handler = async () => Response.json({ message: 'app is archived' }, { status: 403 })
+
+    const logger = createLogger()
+    const {
+      OTALAN_EXPO_SDK_NAME,
+      OTALAN_EXPO_SDK_VERSION,
+      initializeUpdater,
+    } = await loadSdk()
+
+    await initializeUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      deviceId: 'device-1',
+      logger: logger.logger,
+    })
+
+    expect(logger.warnCalls).toEqual([
+      [
+        'Otalan install confirmation failed.',
+        {
+          sdkName: OTALAN_EXPO_SDK_NAME,
+          sdkVersion: OTALAN_EXPO_SDK_VERSION,
+          name: 'Error',
+          message: 'POST https://api.otalan.com/expo/confirm failed with status 403: app is archived',
+        },
+      ],
+    ])
+  })
+
+  test('updater methods work when destructured from the updater object', async () => {
+    const { createUpdater } = await loadSdk()
+    const updater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      deviceId: 'device-1',
+    })
+    const { confirmCurrentUpdate, ready } = updater
+
+    const confirmed = await confirmCurrentUpdate()
+    const readyResult = await ready()
+
+    expect(confirmed.confirmed).toBe(true)
+    expect(readyResult.confirmed).toBe(true)
+    expect(fetchState.calls).toHaveLength(1)
   })
 
   test('confirmCurrentUpdate skips emergency launches', async () => {

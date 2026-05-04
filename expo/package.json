@@ -12,7 +12,7 @@
   "bugs": {
     "url": "https://github.com/Cirtadev/otalan-sdk/issues"
   },
-  "homepage": "https://github.com/Cirtadev/otalan-sdk/tree/master/expo#readme",
+  "homepage": "https://otalan.com",
   "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -25,6 +25,7 @@
   "files": [
     "dist",
     "README.md",
+    "CHANGELOG.md",
     "NOTICE",
     "LICENSE",
     "third-party-licenses.txt"
@@ -42,7 +43,7 @@
   },
   "scripts": {
     "prebuild": "rm -rf dist",
-    "build": "bun build ./src/index.ts --outfile ./dist/index.js --format esm --target browser --no-bundle && bun tsc -p ./tsconfig.build.json --emitDeclarationOnly",
+    "build": "bun build ./src/index.ts --outfile ./dist/index.js --format esm --target browser --external @react-native-async-storage/async-storage --external expo-updates --external react-native && bun tsc -p ./tsconfig.build.json --emitDeclarationOnly",
     "prepack": "bun run build",
     "check": "bun tsc -p ./tsconfig.json --noEmit",
     "lint": "eslint src tests",

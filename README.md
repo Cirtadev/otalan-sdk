@@ -5,6 +5,8 @@ Monorepo for the Otalan mobile OTA SDK packages:
 - `@otalan/capacitor`: full Otalan OTA client for Capacitor apps
 - `@otalan/expo`: small confirmation helper for Expo and bare React Native apps using `expo-updates`
 
+Website: [otalan.com](https://otalan.com)
+
 ## Which Package To Use
 
 ### `@otalan/capacitor`

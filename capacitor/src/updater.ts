@@ -1,0 +1,445 @@
+import { App as CapacitorApp } from '@capacitor/app'
+import { Capacitor } from '@capacitor/core'
+
+import {
+  DEFAULT_TRANSFER_SOURCE,
+  SDK_LOG_CONTEXT,
+  buildHeaders,
+  isNativeOtaPlatform,
+  joinUrl,
+  postJson,
+  requireDeviceId,
+  resolvePlatform,
+  serializeErrorForLog,
+} from './runtime'
+import {
+  ensureBundleIsAvailable,
+  getCurrentBundle,
+  getNextBundle,
+  hasDownloadedBundleSafely,
+  readyLiveUpdate,
+  reloadBundle,
+  resolveNativeVersion,
+  setNextBundle,
+} from './live-update'
+import type { LiveUpdateReadyResult } from './live-update'
+
+import type {
+  CapacitorSyncResult,
+  CapacitorSyncTrigger,
+  CapacitorTransferSource,
+  CapacitorUpdaterConfig,
+  InitializeCapacitorUpdaterConfig,
+  OtaCheckResponse,
+} from './types'
+
+const TRANSFER_SOURCE_STORAGE_KEY_PREFIX = 'otalan:capacitor:transfer-source:'
+
+export type InitializedCapacitorUpdater = {
+  getUpdater: () => Promise<ReturnType<typeof createUpdater> | null>
+  sync: (trigger?: CapacitorSyncTrigger) => Promise<CapacitorSyncResult | null>
+}
+
+export async function initializeUpdater(
+  config: InitializeCapacitorUpdaterConfig,
+): Promise<InitializedCapacitorUpdater> {
+  const logger = config.logger ?? console
+  const onResume = config.onResume ?? true
+
+  let initializePromise: Promise<void> | null = null
+  let updaterPromise: Promise<ReturnType<typeof createUpdater> | null> | null = null
+  let inFlightSync: Promise<CapacitorSyncResult | null> | null = null
+  let resumeListenerRegistered = false
+
+  function isEnabled() {
+    return config.enabled ?? (
+      Capacitor.isNativePlatform()
+      && Boolean(config.apiUrl)
+      && Boolean(config.apiKey)
+    )
+  }
+
+  async function getUpdater(): Promise<ReturnType<typeof createUpdater> | null> {
+    if (!isEnabled()) {
+      return null
+    }
+
+    if (updaterPromise) {
+      return updaterPromise
+    }
+
+    updaterPromise = buildUpdater().catch((error) => {
+      updaterPromise = null
+      throw error
+    })
+
+    return updaterPromise
+  }
+
+  async function sync(trigger: CapacitorSyncTrigger = 'manual') {
+    const updater = await getUpdater()
+    if (!updater) {
+      return null
+    }
+
+    if (inFlightSync) {
+      return inFlightSync
+    }
+
+    inFlightSync = updater.sync().then((result) => {
+      if (result.updateAvailable && result.reloadRequired) {
+        logger.info?.('[ota] update staged', {
+          ...SDK_LOG_CONTEXT,
+          bundleId: result.bundleId,
+          transferSource: result.transferSource,
+        })
+      }
+
+      return result
+    }).catch((error) => {
+      logger.warn(`[ota] ${trigger} sync failed`, serializeErrorForLog(error))
+      return null
+    }).finally(() => {
+      inFlightSync = null
+    })
+
+    return inFlightSync
+  }
+
+  async function initialize() {
+    if (initializePromise) {
+      return initializePromise
+    }
+
+    initializePromise = (async () => {
+      const updater = await getUpdater()
+      if (!updater) {
+        return
+      }
+
+      if (onResume && !resumeListenerRegistered) {
+        CapacitorApp.addListener('resume', () => {
+          void sync('resume')
+        })
+        resumeListenerRegistered = true
+      }
+
+      await sync('launch')
+    })().catch((error) => {
+      initializePromise = null
+      logger.warn('Otalan initializeUpdater() failed.', serializeErrorForLog(error))
+    })
+
+    return initializePromise
+  }
+
+  async function buildUpdater() {
+    const platform = config.platform ?? Capacitor.getPlatform()
+    if (!isNativeOtaPlatform(platform)) {
+      return null
+    }
+
+    const appId = config.appId ?? (await CapacitorApp.getInfo()).id
+    const updaterConfig: CapacitorUpdaterConfig = {
+      apiUrl: config.apiUrl,
+      apiKey: config.apiKey,
+      appId,
+      channel: config.channel,
+      nativeVersion: config.nativeVersion,
+      platform,
+      deviceId: config.deviceId,
+      autoConfirm: config.autoConfirm,
+      reloadOnSync: config.reloadOnSync,
+      headers: config.headers,
+      logger,
+    }
+
+    return createUpdater(updaterConfig)
+  }
+
+  const updater = {
+    getUpdater,
+    sync,
+  }
+
+  await initialize()
+  return updater
+}
+
+export function createUpdater(config: CapacitorUpdaterConfig) {
+  const logger = config.logger ?? console
+  const deviceId = requireDeviceId(config)
+  let confirmedBundleId: string | null = null
+  const confirmingBundlePromises = new Map<string, Promise<void>>()
+  const pendingTransferSources = new Map<string, CapacitorTransferSource>()
+
+  async function resolveStagedTransferSource(bundleId: string) {
+    const knownTransferSource = pendingTransferSources.get(bundleId)
+      ?? readStoredTransferSource(config, bundleId)
+
+    if (knownTransferSource) {
+      return knownTransferSource
+    }
+
+    return await hasDownloadedBundleSafely(bundleId)
+      ? 'cached'
+      : DEFAULT_TRANSFER_SOURCE
+  }
+
+  async function confirmReadyBundle(result: LiveUpdateReadyResult) {
+    if (!result.currentBundleId || result.currentBundleId === confirmedBundleId) {
+      return
+    }
+
+    const bundleId = result.currentBundleId
+    const existingConfirmation = confirmingBundlePromises.get(bundleId)
+    if (existingConfirmation) {
+      await existingConfirmation
+      return
+    }
+
+    const confirmationPromise = (async () => {
+      const confirmed = await confirmInstall(config, {
+        bundleId,
+        deviceId,
+        transferSource: resolveTransferSource(config, pendingTransferSources, bundleId),
+      }).catch((error) => {
+        logger.warn('Otalan install confirmation failed.', serializeErrorForLog(error))
+        return false
+      })
+
+      if (confirmed) {
+        clearTransferSource(config, pendingTransferSources, bundleId)
+        confirmedBundleId = bundleId
+      }
+    })().finally(() => {
+      confirmingBundlePromises.delete(bundleId)
+    })
+
+    confirmingBundlePromises.set(bundleId, confirmationPromise)
+    await confirmationPromise
+  }
+
+  async function readyInternal(options: {
+    waitForConfirmation: boolean
+  }) {
+    const result = await readyLiveUpdate()
+
+    if (options.waitForConfirmation) {
+      await confirmReadyBundle(result)
+    } else {
+      void confirmReadyBundle(result)
+    }
+
+    return result
+  }
+
+  async function ready() {
+    return readyInternal({ waitForConfirmation: true })
+  }
+
+  async function getCurrentBundleId() {
+    const current = await getCurrentBundle()
+    return current.bundleId ?? undefined
+  }
+
+  async function check() {
+    return checkForUpdate(config, deviceId)
+  }
+
+  async function sync(): Promise<CapacitorSyncResult> {
+    await readyInternal({ waitForConfirmation: false }).catch((error) => {
+      logger.warn('Otalan ready() failed.', serializeErrorForLog(error))
+    })
+
+    const currentBundle = await getCurrentBundle()
+    const nextBundle = await getNextBundle()
+    const update = await check()
+
+    if (!update.updateAvailable) {
+      return { updateAvailable: false }
+    }
+
+    if (update.bundleId === currentBundle.bundleId) {
+      return { updateAvailable: false }
+    }
+
+    if (update.bundleId === nextBundle.bundleId) {
+      const transferSource = await resolveStagedTransferSource(update.bundleId)
+      rememberTransferSource(config, pendingTransferSources, update.bundleId, transferSource)
+
+      if (config.reloadOnSync !== false) {
+        await reloadBundle(update.bundleId)
+      }
+
+      return buildAppliedResult(config, update, transferSource)
+    }
+
+    const transferSource = await ensureBundleIsAvailable(update)
+
+    await setNextBundle(update.bundleId)
+    rememberTransferSource(config, pendingTransferSources, update.bundleId, transferSource)
+
+    if (config.reloadOnSync !== false) {
+      await reloadBundle(update.bundleId)
+    }
+
+    return buildAppliedResult(config, update, transferSource)
+  }
+
+  return {
+    ready,
+    getCurrentBundleId,
+    check,
+    sync,
+  }
+}
+
+async function confirmInstall(
+  config: CapacitorUpdaterConfig,
+  input: {
+    bundleId: string
+    deviceId: string
+    transferSource: CapacitorTransferSource
+  },
+) {
+  if (!config.autoConfirm && config.autoConfirm !== undefined) {
+    return false
+  }
+
+  await postJson(
+    joinUrl(config.apiUrl, '/capacitor/confirm'),
+    {
+      appId: config.appId,
+      platform: resolvePlatform(config),
+      bundleId: input.bundleId,
+      deviceId: input.deviceId,
+      transferSource: input.transferSource,
+    },
+    buildHeaders(config),
+  )
+
+  return true
+}
+
+async function checkForUpdate(config: CapacitorUpdaterConfig, deviceId: string) {
+  const currentBundle = await getCurrentBundle()
+
+  return postJson<OtaCheckResponse>(
+    joinUrl(config.apiUrl, '/capacitor/check'),
+    {
+      appId: config.appId,
+      platform: resolvePlatform(config),
+      channel: config.channel,
+      nativeVersion: await resolveNativeVersion(config),
+      currentBundleId: currentBundle.bundleId ?? undefined,
+      deviceId,
+    },
+    buildHeaders(config),
+  )
+}
+
+function buildAppliedResult(
+  config: CapacitorUpdaterConfig,
+  check: Extract<OtaCheckResponse, { updateAvailable: true }>,
+  transferSource: CapacitorTransferSource,
+) {
+  return {
+    updateAvailable: true,
+    applied: true,
+    bundleId: check.bundleId,
+    mandatory: check.mandatory ?? true,
+    transferSource,
+    releaseNotes: check.releaseNotes,
+    reloadRequired: config.reloadOnSync === false,
+  } satisfies CapacitorSyncResult
+}
+
+function resolveTransferSource(
+  config: CapacitorUpdaterConfig,
+  pendingTransferSources: Map<string, CapacitorTransferSource>,
+  bundleId: string,
+) {
+  return pendingTransferSources.get(bundleId)
+    ?? readStoredTransferSource(config, bundleId)
+    ?? DEFAULT_TRANSFER_SOURCE
+}
+
+function rememberTransferSource(
+  config: CapacitorUpdaterConfig,
+  pendingTransferSources: Map<string, CapacitorTransferSource>,
+  bundleId: string,
+  transferSource: CapacitorTransferSource,
+) {
+  pendingTransferSources.set(bundleId, transferSource)
+  writeStoredTransferSource(config, bundleId, transferSource)
+}
+
+function clearTransferSource(
+  config: CapacitorUpdaterConfig,
+  pendingTransferSources: Map<string, CapacitorTransferSource>,
+  bundleId: string,
+) {
+  pendingTransferSources.delete(bundleId)
+  removeStoredTransferSource(config, bundleId)
+}
+
+function readStoredTransferSource(config: CapacitorUpdaterConfig, bundleId: string) {
+  const storage = getTransferSourceStorage()
+  if (!storage) {
+    return undefined
+  }
+
+  try {
+    const value = storage.getItem(buildTransferSourceStorageKey(config, bundleId))
+    return isCapacitorTransferSource(value) ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function writeStoredTransferSource(
+  config: CapacitorUpdaterConfig,
+  bundleId: string,
+  transferSource: CapacitorTransferSource,
+) {
+  const storage = getTransferSourceStorage()
+  if (!storage) {
+    return
+  }
+
+  try {
+    storage.setItem(buildTransferSourceStorageKey(config, bundleId), transferSource)
+  } catch {
+    // The in-memory marker still covers the current JS context.
+  }
+}
+
+function removeStoredTransferSource(config: CapacitorUpdaterConfig, bundleId: string) {
+  const storage = getTransferSourceStorage()
+  if (!storage) {
+    return
+  }
+
+  try {
+    storage.removeItem(buildTransferSourceStorageKey(config, bundleId))
+  } catch {
+    // Best effort cleanup only.
+  }
+}
+
+function getTransferSourceStorage() {
+  try {
+    return globalThis.localStorage
+  } catch {
+    return undefined
+  }
+}
+
+function buildTransferSourceStorageKey(config: Pick<CapacitorUpdaterConfig, 'appId'>, bundleId: string) {
+  return `${TRANSFER_SOURCE_STORAGE_KEY_PREFIX}${config.appId}:${bundleId}`
+}
+
+function isCapacitorTransferSource(value: string | null): value is CapacitorTransferSource {
+  return value === 'downloaded' || value === 'cached'
+}
