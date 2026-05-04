@@ -118,10 +118,14 @@ export async function initializeUpdater(
       }
 
       if (onResume && !resumeListenerRegistered) {
-        CapacitorApp.addListener('resume', () => {
-          void sync('resume')
-        })
-        resumeListenerRegistered = true
+        try {
+          await CapacitorApp.addListener('resume', () => {
+            void sync('resume')
+          })
+          resumeListenerRegistered = true
+        } catch (error) {
+          logger.warn('Otalan resume listener registration failed.', serializeErrorForLog(error))
+        }
       }
 
       await sync('launch')

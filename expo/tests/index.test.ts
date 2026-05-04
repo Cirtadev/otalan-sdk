@@ -13,6 +13,8 @@ const asyncStorageState = {
   getItemCalls: [] as string[],
   setItemCalls: [] as Array<{ key: string; value: string }>,
   storedValue: null as string | null,
+  getItemError: null as Error | null,
+  setItemError: null as Error | null,
 }
 
 const expoState = {
@@ -51,10 +53,20 @@ function applyModuleMocks() {
     default: {
       getItem: async (key: string) => {
         asyncStorageState.getItemCalls.push(key)
+
+        if (asyncStorageState.getItemError) {
+          throw asyncStorageState.getItemError
+        }
+
         return asyncStorageState.storedValue
       },
       setItem: async (key: string, value: string) => {
         asyncStorageState.setItemCalls.push({ key, value })
+
+        if (asyncStorageState.setItemError) {
+          throw asyncStorageState.setItemError
+        }
+
         asyncStorageState.storedValue = value
       },
     },
@@ -106,6 +118,8 @@ beforeEach(() => {
   asyncStorageState.getItemCalls = []
   asyncStorageState.setItemCalls = []
   asyncStorageState.storedValue = null
+  asyncStorageState.getItemError = null
+  asyncStorageState.setItemError = null
 
   expoState.platformOs = 'ios'
   expoState.isEnabled = true
@@ -321,6 +335,40 @@ describe('@otalan/expo', () => {
     expect(fetchState.calls).toHaveLength(1)
   })
 
+  test('confirmCurrentUpdate deduplicates concurrent confirmation calls', async () => {
+    let resolveConfirm: (response: Response) => void = () => undefined
+    const confirmResponse = new Promise<Response>((resolve) => {
+      resolveConfirm = resolve
+    })
+    fetchState.handler = async () => confirmResponse
+
+    const { createUpdater } = await loadSdk()
+    const updater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      deviceId: 'device-1',
+    })
+
+    const first = updater.confirmCurrentUpdate()
+    const second = updater.confirmCurrentUpdate()
+
+    await Promise.resolve()
+    expect(fetchState.calls).toHaveLength(1)
+
+    resolveConfirm(Response.json({ ok: true }))
+
+    await expect(first).resolves.toMatchObject({
+      confirmed: true,
+      transferSource: 'downloaded',
+    })
+    await expect(second).resolves.toMatchObject({
+      confirmed: true,
+      transferSource: 'downloaded',
+    })
+    expect(fetchState.calls).toHaveLength(1)
+  })
+
   test('initializeUpdater creates and persists a device id when one is not provided', async () => {
     Date.now = () => 1_700_000_000_000
     Math.random = () => 0.123456789
@@ -364,5 +412,38 @@ describe('@otalan/expo', () => {
     expect(asyncStorageState.getItemCalls).toHaveLength(0)
     expect(asyncStorageState.setItemCalls).toHaveLength(0)
     expect(fetchState.calls).toHaveLength(0)
+  })
+
+  test('initializeUpdater logs device ID storage failures and no-ops', async () => {
+    asyncStorageState.getItemError = new Error('storage unavailable')
+
+    const {
+      OTALAN_EXPO_SDK_NAME,
+      OTALAN_EXPO_SDK_VERSION,
+      initializeUpdater,
+    } = await loadSdk()
+    const logger = createLogger()
+
+    const updater = await initializeUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      logger: logger.logger,
+    })
+
+    expect(updater.getUpdater()).toBeNull()
+    expect(await updater.ready()).toBeNull()
+    expect(fetchState.calls).toHaveLength(0)
+    expect(logger.warnCalls).toEqual([
+      [
+        'Otalan device ID initialization failed.',
+        {
+          sdkName: OTALAN_EXPO_SDK_NAME,
+          sdkVersion: OTALAN_EXPO_SDK_VERSION,
+          name: 'Error',
+          message: 'storage unavailable',
+        },
+      ],
+    ])
   })
 })

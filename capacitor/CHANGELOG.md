@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.1 - 2026-05-05
+
+### Fixed
+
+- Awaited Capacitor resume listener registration so native registration failures are logged instead of becoming unhandled promise rejections.
+- Kept launch sync running even when resume listener registration fails.
+
+### Changed
+
+- Clarified Capacitor 7 and 8 support wording in the package README.
+
 ## 1.0.0 - 2026-05-04
 
 Initial public release of `@otalan/capacitor`.

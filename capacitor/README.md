@@ -29,7 +29,7 @@ Use the OTA app key in the app. Do not use a CI key in frontend code.
 
 ## Supported Versions
 
-This package supports Capacitor 8 and Capacitor 7:
+This package supports Capacitor 7 and 8:
 
 - `@capacitor/core >=7.0.0 <9`
 - `@capacitor/app >=7.0.0 <9`
@@ -148,6 +148,7 @@ await updater.sync()
 - resolves `appId` from `App.getInfo()` unless you provide one
 - runs one launch sync
 - can register a resume listener
+- logs resume listener registration failures and still runs launch sync
 - deduplicates concurrent sync calls
 - swallows sync failures and logs warnings instead
 - keeps install confirmation best-effort during sync so a slow `POST /capacitor/confirm` cannot block the next update check

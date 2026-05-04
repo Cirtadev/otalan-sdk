@@ -47,7 +47,7 @@ Runtime support is for native mobile apps:
 
 ## Version Support
 
-- `@otalan/capacitor` supports Capacitor 8 and Capacitor 7.
+- `@otalan/capacitor` supports Capacitor 7 and 8.
 - `@otalan/expo` supports Expo SDK 54 and 55.
 - Bare React Native support covers React Native 0.84 and 0.85 when paired with a compatible `expo-updates` setup.
 
@@ -59,18 +59,31 @@ Older versions may work, but they are outside the supported range. We do not off
 
 You do not need Bun to use either package in an app.
 
-Use any package manager you already use:
+Install only the package that matches your app runtime.
+
+For Capacitor apps:
 
 ```bash
-npm install @otalan/capacitor
-npm install @otalan/expo
+npm install @otalan/capacitor @capawesome/capacitor-live-update @capacitor/app @capacitor/core
+```
+
+For Expo or bare React Native apps using `expo-updates`:
+
+```bash
+npm install @otalan/expo expo-updates
 ```
 
 Peer dependencies are documented in each package README.
 
+## Repo Layout
+
+- `capacitor/`: `@otalan/capacitor` source, package docs, and tests
+- `expo/`: `@otalan/expo` source, package docs, and tests
+- root scripts: workspace-level install, lint, typecheck, test, and build commands
+
 ## Repo Development
 
-Bun 1.3.11 or newer is required to build and validate this repo.
+Bun 1.3.11 or newer is required to build and validate this repo. The pinned package manager is `bun@1.3.13`.
 
 ```bash
 bun install
@@ -81,3 +94,10 @@ bun run build
 ```
 
 Package tests live under each workspace `tests/` directory.
+
+For package-specific work:
+
+```bash
+bun run build:capacitor
+bun run build:expo
+```

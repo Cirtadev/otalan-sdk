@@ -27,6 +27,8 @@ const capacitorState = {
   getDownloadedBundlesError: null as Error | null,
   versionName: '1.0.0',
   readyResult: { currentBundleId: undefined as string | undefined },
+  addListenerCalls: 0,
+  addListenerError: null as Error | null,
   downloadCalls: [] as Array<{ url: string; bundleId: string; checksum?: string }>,
   setNextCalls: [] as Array<{ bundleId: string }>,
   reloadCalls: 0,
@@ -86,7 +88,15 @@ const liveUpdateMock = {
 mock.module('@capacitor/app', () => ({
   App: {
     getInfo: async () => ({ id: capacitorState.appId }),
-    addListener: async () => ({ remove: async () => undefined }),
+    addListener: async () => {
+      capacitorState.addListenerCalls += 1
+
+      if (capacitorState.addListenerError) {
+        throw capacitorState.addListenerError
+      }
+
+      return { remove: async () => undefined }
+    },
   },
 }))
 
@@ -233,6 +243,8 @@ beforeEach(() => {
   capacitorState.getDownloadedBundlesError = null
   capacitorState.versionName = '1.0.0'
   capacitorState.readyResult = { currentBundleId: undefined }
+  capacitorState.addListenerCalls = 0
+  capacitorState.addListenerError = null
   capacitorState.downloadCalls = []
   capacitorState.setNextCalls = []
   capacitorState.reloadCalls = 0
@@ -427,6 +439,38 @@ describe('@otalan/capacitor', () => {
             name: 'TypeError',
             message: 'Load failed',
           },
+        },
+      ],
+    ])
+  })
+
+  test('initializeUpdater logs resume listener failures and still runs launch sync', async () => {
+    capacitorState.addListenerError = new Error('listener unavailable')
+
+    fetchState.handler = async () => Response.json({ updateAvailable: false })
+
+    const logger = createLogger()
+
+    await initializeUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      channel: 'production',
+      deviceId: 'device-1',
+      logger: logger.logger,
+    })
+
+    expect(capacitorState.addListenerCalls).toBe(1)
+    expect(fetchState.calls.map((call) => call.url)).toEqual([
+      'https://api.otalan.com/capacitor/check',
+    ])
+    expect(logger.warnCalls).toEqual([
+      [
+        'Otalan resume listener registration failed.',
+        {
+          sdkName: OTALAN_CAPACITOR_SDK_NAME,
+          sdkVersion: OTALAN_CAPACITOR_SDK_VERSION,
+          name: 'Error',
+          message: 'listener unavailable',
         },
       ],
     ])

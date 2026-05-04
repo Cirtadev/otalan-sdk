@@ -231,6 +231,7 @@ export async function initializeUpdater(
 ): Promise<InitializedExpoUpdater> {
   const logger = config.logger ?? console
   let readyPromise: Promise<ExpoReadyResult | null> | null = null
+  let updater: ReturnType<typeof createUpdater> | null = null
 
   function isEnabled() {
     return config.enabled ?? (
@@ -241,20 +242,24 @@ export async function initializeUpdater(
     )
   }
 
-  const updater = !isEnabled()
-    ? null
-    : createUpdater({
-      apiUrl: config.apiUrl,
-      apiKey: config.apiKey,
-      appId: config.appId,
-      autoConfirm: config.autoConfirm,
-      deviceId: config.deviceId ?? await getOrCreateDeviceId(
-        config.deviceIdStorage ?? AsyncStorage,
-        config.deviceIdStorageKey ?? DEFAULT_DEVICE_ID_STORAGE_KEY,
-      ),
-      headers: config.headers,
-      logger,
-    })
+  if (isEnabled()) {
+    try {
+      updater = createUpdater({
+        apiUrl: config.apiUrl,
+        apiKey: config.apiKey,
+        appId: config.appId,
+        autoConfirm: config.autoConfirm,
+        deviceId: config.deviceId ?? await getOrCreateDeviceId(
+          config.deviceIdStorage ?? AsyncStorage,
+          config.deviceIdStorageKey ?? DEFAULT_DEVICE_ID_STORAGE_KEY,
+        ),
+        headers: config.headers,
+        logger,
+      })
+    } catch (error) {
+      logger.warn('Otalan device ID initialization failed.', serializeErrorForLog(error))
+    }
+  }
 
   function getUpdater() {
     return updater
@@ -293,6 +298,7 @@ export function createUpdater(config: ExpoUpdaterConfig) {
   const logger = config.logger ?? console
   const deviceId = requireDeviceId(config)
   let confirmedUpdateId: string | null = null
+  const confirmingUpdatePromises = new Map<string, Promise<ExpoReadyResult>>()
 
   async function getCurrentUpdate() {
     if (!Updates.isEnabled) {
@@ -337,7 +343,9 @@ export function createUpdater(config: ExpoUpdaterConfig) {
       return current
     }
 
-    if (current.updateId === confirmedUpdateId) {
+    const updateId = current.updateId
+
+    if (updateId === confirmedUpdateId) {
       return {
         ...current,
         confirmed: true,
@@ -345,26 +353,38 @@ export function createUpdater(config: ExpoUpdaterConfig) {
       } satisfies ExpoReadyResult
     }
 
-    await postJson(
-      joinUrl(config.apiUrl, '/expo/confirm'),
-      {
-        appId: config.appId,
-        platform: resolvePlatform(),
-        updateId: current.updateId,
-        runtimeVersion: current.runtimeVersion,
-        deviceId,
+    const existingConfirmation = confirmingUpdatePromises.get(updateId)
+    if (existingConfirmation) {
+      return existingConfirmation
+    }
+
+    const confirmationPromise = (async () => {
+      await postJson(
+        joinUrl(config.apiUrl, '/expo/confirm'),
+        {
+          appId: config.appId,
+          platform: resolvePlatform(),
+          updateId,
+          runtimeVersion: current.runtimeVersion,
+          deviceId,
+          transferSource: DEFAULT_TRANSFER_SOURCE,
+        },
+        buildHeaders(config),
+      )
+
+      confirmedUpdateId = updateId
+
+      return {
+        ...current,
+        confirmed: true,
         transferSource: DEFAULT_TRANSFER_SOURCE,
-      },
-      buildHeaders(config),
-    )
+      } satisfies ExpoReadyResult
+    })().finally(() => {
+      confirmingUpdatePromises.delete(updateId)
+    })
 
-    confirmedUpdateId = current.updateId
-
-    return {
-      ...current,
-      confirmed: true,
-      transferSource: DEFAULT_TRANSFER_SOURCE,
-    } satisfies ExpoReadyResult
+    confirmingUpdatePromises.set(updateId, confirmationPromise)
+    return confirmationPromise
   }
 
   async function ready() {

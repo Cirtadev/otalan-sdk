@@ -198,6 +198,7 @@ Unlike `@otalan/capacitor`, this package does not report `cached` confirmations.
 - no-ops outside native iOS and Android
 - no-ops when `expo-updates` is disabled
 - no-ops when `apiUrl` or `apiKey` are missing
+- logs device ID storage failures and returns a no-op updater
 - swallows confirmation failures and logs warnings instead
 
 If startup logs `Otalan install confirmation failed.`, the failure happened during `POST /expo/confirm`. The SDK logs a serializable `{ sdkName, sdkVersion, name, message }` error payload so native consoles can show the installed SDK version, HTTP status, API message, or fetch failure instead of an empty `{}`.
@@ -304,7 +305,7 @@ Only active, non-archived Otalan apps are eligible for Expo updates and install 
 
 - `initializeUpdater()` will create and persist `deviceId` for you unless you override it
 - `apiKey` is the public OTA app key and is sent in `x-api-key`
-- repeated confirmation calls for the same launched update are skipped
+- repeated and concurrent confirmation calls for the same launched update are skipped
 - Expo and bare React Native confirmations use `downloaded` as the transfer source default
 - archived apps do not receive updates until they are restored in Otalan
 - production API URL is usually `https://api.otalan.com`

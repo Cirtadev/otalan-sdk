@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.1 - 2026-05-05
+
+### Fixed
+
+- Deduplicated concurrent Expo install confirmation calls for the same launched update.
+- Logged device ID storage initialization failures from `initializeUpdater()` and returned a no-op updater instead of rejecting during app startup.
+
 ## 1.0.0 - 2026-05-04
 
 Initial public release of `@otalan/expo`.
