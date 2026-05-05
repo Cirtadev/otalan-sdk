@@ -385,7 +385,7 @@ describe('@otalan/expo', () => {
       return Response.json({ ok: true })
     }
 
-    await initializeUpdater({
+    const updater = await initializeUpdater({
       apiUrl: 'https://api.otalan.com',
       apiKey: 'otalan_ota_xxx',
       appId: 'com.example.app',
@@ -395,6 +395,43 @@ describe('@otalan/expo', () => {
     expect(asyncStorageState.setItemCalls).toHaveLength(1)
     expect(asyncStorageState.setItemCalls[0]?.key).toBe('otalan-device-id')
     expect(asyncStorageState.setItemCalls[0]?.value.startsWith('otalan-expo-')).toBe(true)
+    expect(await updater.getDeviceId()).toBe(asyncStorageState.storedValue)
+    expect(fetchState.calls).toHaveLength(1)
+  })
+
+  test('initializeUpdater reads device id from custom storage', async () => {
+    const storageCalls = {
+      getItem: [] as string[],
+      setItem: [] as Array<{ key: string; value: string }>,
+    }
+
+    const { initializeUpdater } = await loadSdk()
+
+    fetchState.handler = async (_url, init) => {
+      expect(readJsonBody({ url: '', init }).deviceId).toBe('custom-device-1')
+      return Response.json({ ok: true })
+    }
+
+    const updater = await initializeUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      deviceIdStorage: {
+        getItem: async (key) => {
+          storageCalls.getItem.push(key)
+          return 'custom-device-1'
+        },
+        setItem: async (key, value) => {
+          storageCalls.setItem.push({ key, value })
+        },
+      },
+      deviceIdStorageKey: 'custom-device-key',
+    })
+
+    expect(await updater.getDeviceId()).toBe('custom-device-1')
+    expect(storageCalls.getItem).toEqual(['custom-device-key'])
+    expect(storageCalls.setItem).toHaveLength(0)
+    expect(asyncStorageState.getItemCalls).toHaveLength(0)
     expect(fetchState.calls).toHaveLength(1)
   })
 
@@ -408,6 +445,7 @@ describe('@otalan/expo', () => {
     })
 
     expect(updater.getUpdater()).toBeNull()
+    expect(await updater.getDeviceId()).toBeNull()
     expect(await updater.ready()).toBeNull()
     expect(asyncStorageState.getItemCalls).toHaveLength(0)
     expect(asyncStorageState.setItemCalls).toHaveLength(0)
@@ -432,6 +470,7 @@ describe('@otalan/expo', () => {
     })
 
     expect(updater.getUpdater()).toBeNull()
+    expect(await updater.getDeviceId()).toBeNull()
     expect(await updater.ready()).toBeNull()
     expect(fetchState.calls).toHaveLength(0)
     expect(logger.warnCalls).toEqual([

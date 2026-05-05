@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.1.0 - 2026-05-05
+
+### Added
+
+- Added storage-backed device ID generation to `initializeUpdater()` when no explicit `deviceId` is provided.
+- Added `getDeviceId()` on initialized Capacitor updaters.
+- Added `deviceIdStorage` and `deviceIdStorageKey` startup helper options.
+- Exported `CapacitorCheckResult` and `DeviceIdStorage` types.
+
+### Changed
+
+- Made `deviceId` optional for `initializeUpdater()` while keeping it required for low-level `createUpdater()`.
+- Logged device ID storage initialization failures from `initializeUpdater()` and returned a no-op updater.
+- Expanded README examples, API return documentation, and backend contract notes for device ID handling.
+
 ## 1.0.1 - 2026-05-05
 
 ### Fixed

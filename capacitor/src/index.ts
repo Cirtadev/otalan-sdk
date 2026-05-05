@@ -7,10 +7,12 @@ import { createUpdater as createUpdaterInternal } from './updater'
 
 import type { InitializedCapacitorUpdater } from './updater'
 import type {
+  CapacitorCheckResult,
   CapacitorSyncResult,
   CapacitorSyncTrigger,
   CapacitorTransferSource,
   CapacitorUpdaterConfig,
+  DeviceIdStorage,
   InitializeCapacitorUpdaterConfig,
 } from './types'
 
@@ -28,10 +30,12 @@ export async function initializeUpdater(
 }
 
 export type {
+  CapacitorCheckResult,
   CapacitorSyncResult,
   CapacitorSyncTrigger,
   CapacitorTransferSource,
   CapacitorUpdaterConfig,
+  DeviceIdStorage,
   InitializedCapacitorUpdater,
   InitializeCapacitorUpdaterConfig,
 }

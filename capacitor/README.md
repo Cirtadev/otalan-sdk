@@ -11,7 +11,7 @@ This package is the full client-side orchestration layer for Otalan on Capacitor
 - downloads bundles through `@capawesome/capacitor-live-update`
 - sets the next bundle
 - reloads the app when needed
-- confirms successful installs through `POST /capacitor/confirm` with the bundle transfer source
+- confirms successful installs through `POST /capacitor/confirm` with experimental bundle transfer source metadata
 - provides a startup helper through `initializeUpdater()`
 
 The SDK uses Capacitor's native HTTP transport for Otalan API calls on iOS and Android, with browser `fetch()` kept as the non-native fallback.
@@ -23,7 +23,7 @@ The SDK uses Capacitor's native HTTP transport for Otalan API calls on iOS and A
 - `@capacitor/app`
 - `@capacitor/core`
 - an Otalan OTA app key
-- a stable device ID
+- a stable device ID, or let `initializeUpdater()` create one
 
 Use the OTA app key in the app. Do not use a CI key in frontend code.
 
@@ -73,52 +73,109 @@ Call `initializeUpdater()` once during app startup:
 ```ts
 import { initializeUpdater } from '@otalan/capacitor'
 
-async function getStableDeviceId() {
-  return loadOrCreateStableDeviceId()
-}
-
-await initializeUpdater({
+const otalan = await initializeUpdater({
   apiUrl: 'https://api.otalan.com',
   apiKey: 'otalan_ota_xxx',
   channel: 'production',
-  deviceId: await getStableDeviceId(),
   onResume: true,
 })
+
+const deviceId = await otalan.getDeviceId()
 ```
 
 ## Capacitor Example
 
 ```ts
 // src/ota.ts
-import { initializeUpdater } from '@otalan/capacitor'
-
-async function getStableDeviceId() {
-  return loadOrCreateStableDeviceId()
-}
+import { initializeUpdater, type InitializedCapacitorUpdater } from '@otalan/capacitor'
 
 // -----------------------------------------------------------------------------
 // Public API
 // -----------------------------------------------------------------------------
 
-export async function startOtalanUpdater() {
-  return initializeUpdater({
+let otalanUpdater: Promise<InitializedCapacitorUpdater> | null = null
+
+export function startOtalanUpdater() {
+  otalanUpdater ??= initializeUpdater({
     apiUrl: 'https://api.otalan.com',
     apiKey: 'otalan_ota_xxx',
     channel: 'production',
-    deviceId: await getStableDeviceId(),
     onResume: true,
   })
+
+  return otalanUpdater
+}
+
+export async function syncOtalanUpdates() {
+  const otalan = await startOtalanUpdater()
+  return otalan.sync('manual')
+}
+
+export async function getOtalanDeviceId() {
+  const otalan = await startOtalanUpdater()
+  return otalan.getDeviceId()
 }
 ```
 
 ```ts
 // src/main.ts
-import { startOtalanUpdater } from './ota'
+import { startOtalanUpdater, syncOtalanUpdates } from './ota'
 
 void startOtalanUpdater()
+
+document.querySelector('#sync-updates')?.addEventListener('click', () => {
+  void syncOtalanUpdates()
+})
 ```
 
-The `deviceId` must stay stable across launches. Otalan uses it for confirmation and rollout targeting.
+`initializeUpdater()` creates and persists a stable `deviceId` when you do not provide one. Otalan uses that ID for update checks, confirmation, and rollout targeting.
+
+## Custom Device ID Storage
+
+By default, `initializeUpdater()` creates and persists a stable `deviceId` with `localStorage`.
+
+If you want different storage, provide a custom adapter:
+
+```ts
+import { Preferences } from '@capacitor/preferences'
+import { initializeUpdater } from '@otalan/capacitor'
+
+await initializeUpdater({
+  apiUrl: 'https://api.otalan.com',
+  apiKey: 'otalan_ota_xxx',
+  channel: 'production',
+  deviceIdStorage: {
+    getItem: async (key) => {
+      const result = await Preferences.get({ key })
+      return result.value
+    },
+    setItem: (key, value) => Preferences.set({ key, value }),
+  },
+})
+```
+
+If your app already owns a stable ID, pass it explicitly:
+
+```ts
+await initializeUpdater({
+  apiUrl: 'https://api.otalan.com',
+  apiKey: 'otalan_ota_xxx',
+  channel: 'production',
+  deviceId: await loadOrCreateStableDeviceId(),
+})
+```
+
+`initializeUpdater()` returns the resolved ID:
+
+```ts
+const otalan = await initializeUpdater({
+  apiUrl: 'https://api.otalan.com',
+  apiKey: 'otalan_ota_xxx',
+  channel: 'production',
+})
+
+const deviceId = await otalan.getDeviceId()
+```
 
 ## Low-Level Usage
 
@@ -146,8 +203,11 @@ await updater.sync()
 - no-ops outside native iOS and Android
 - no-ops when `apiUrl` or `apiKey` are missing
 - resolves `appId` from `App.getInfo()` unless you provide one
+- creates and persists a stable `deviceId` unless you provide one
+- exposes the resolved `deviceId` through `getDeviceId()`
 - runs one launch sync
 - can register a resume listener
+- logs device ID storage failures and returns a no-op updater
 - logs resume listener registration failures and still runs launch sync
 - deduplicates concurrent sync calls
 - swallows sync failures and logs warnings instead
@@ -177,19 +237,44 @@ Config:
 - `headers`: optional extra request headers
 - `logger`: optional warning logger
 
+Returns a low-level Capacitor updater:
+
+- `ready()`: returns `Promise<LiveUpdateReadyResult>` after calling `LiveUpdate.ready()` and attempting install confirmation
+- `getCurrentBundleId()`: returns `Promise<string | undefined>`
+- `check()`: returns `Promise<CapacitorCheckResult>`
+- `sync()`: returns `Promise<CapacitorSyncResult>`
+
 ### `await initializeUpdater(config)`
 
 Config:
 
-- everything from `createUpdater(config)` except `appId`, which becomes optional
+- everything from `createUpdater(config)` except `appId` and `deviceId`, which become optional
+- `deviceId`: optional explicit stable device ID override
+- `deviceIdStorage`: optional async storage adapter with `getItem()` and `setItem()`
+- `deviceIdStorageKey`: optional storage key, defaults to `otalan-device-id`
 - `enabled`: optional explicit gate
 - `onResume`: defaults to `true`
 - `logger`: optional warning and info logger
 
 Returns:
 
+- `getDeviceId()`: resolves the stable device ID or `null` when no updater is enabled and no explicit ID was provided
 - `getUpdater()`: resolves the low-level updater or `null`
 - `sync(trigger?)`: runs a deduplicated sync and returns `CapacitorSyncResult | null`
+
+### `await initialized.getDeviceId()`
+
+Returns `Promise<string | null>`.
+
+### `await initialized.getUpdater()`
+
+Returns the low-level updater from `createUpdater(config)`, or `null` when the startup helper is disabled or the platform is unsupported.
+
+### `await initialized.sync(trigger?)`
+
+Runs a deduplicated update sync through the low-level updater.
+
+Returns `Promise<CapacitorSyncResult | null>`.
 
 ### Package Metadata Exports
 
@@ -202,13 +287,19 @@ These values are included in SDK warning logs.
 
 Calls `LiveUpdate.ready()` and confirms the currently running bundle when possible.
 
+Returns the `LiveUpdate.ready()` result from `@capawesome/capacitor-live-update`.
+
 ### `await updater.getCurrentBundleId()`
 
 Returns the active bundle ID when one exists.
 
+Returns `Promise<string | undefined>`.
+
 ### `await updater.check()`
 
 Calls `POST /capacitor/check`.
+
+Returns `Promise<CapacitorCheckResult>`.
 
 ### `await updater.sync()`
 
@@ -218,16 +309,40 @@ Runs the full Otalan update flow:
 2. checks Otalan
 3. skips if already current
 4. reloads immediately if the target bundle is already staged
-5. downloads only when needed and records `transferSource`
+5. downloads only when needed and records experimental `transferSource` metadata
 6. stages the next bundle
 7. reloads unless `reloadOnSync` is `false`
 
-When an update is applied, `CapacitorSyncResult` includes `transferSource`:
+When an update is applied, `CapacitorSyncResult` includes experimental `transferSource` metadata:
 
 - `downloaded`: the SDK called `LiveUpdate.downloadBundle()` for this bundle before staging it
 - `cached`: the SDK verified the bundle was already present on the device before attempting a download
 
-The SDK uses `downloaded` as the default. If the source marker is missing, storage is unavailable, or the SDK cannot confidently prove the bundle was cached, confirmation is sent as `downloaded`. An already-staged bundle without a recorded source is reported as `cached` only when the installed Live Update plugin's bundle-listing API proves it is already present on the device.
+The SDK uses `downloaded` as the default. If the source marker is missing, storage is unavailable, or the SDK cannot confidently prove the bundle was cached, confirmation is sent as `downloaded`. An already-staged bundle without a recorded source is reported as `cached` only when the installed Live Update plugin's bundle-listing API proves it is already present on the device. Treat this field as experimental client-reported metadata only.
+
+Returns `Promise<CapacitorSyncResult>`.
+
+## Result Types
+
+`CapacitorCheckResult`:
+
+- `updateAvailable`: whether Otalan selected an update
+- `bundleId`: selected bundle ID when an update is available
+- `downloadUrl`: selected bundle URL when an update is available
+- `checksum`: optional bundle checksum
+- `mandatory`: whether the update is mandatory
+- `rolloutPercent`: rollout percentage returned by the API
+- `releaseNotes`: optional release notes
+
+`CapacitorSyncResult`:
+
+- `updateAvailable`: whether Otalan selected an update that should be applied
+- `applied`: whether the SDK staged the selected update
+- `bundleId`: applied bundle ID
+- `mandatory`: whether the applied update is mandatory
+- `transferSource`: experimental transfer metadata when an update is applied
+- `releaseNotes`: optional release notes
+- `reloadRequired`: `true` when `reloadOnSync: false` leaves a staged bundle waiting for app reload
 
 ## Backend Contract
 
@@ -236,7 +351,9 @@ The backend must expose:
 - `POST /capacitor/check`
 - `POST /capacitor/confirm`
 
-`POST /capacitor/confirm` requires `deviceId` and `transferSource`.
+`POST /capacitor/check` requires `deviceId` so Otalan can target staged rollouts consistently.
+
+`POST /capacitor/confirm` requires `deviceId` and still accepts `transferSource` as experimental metadata.
 
 Confirm payload:
 
@@ -250,11 +367,7 @@ Confirm payload:
 }
 ```
 
-`transferSource` is either `downloaded` or `cached`. Use it for transfer analytics, billing, and transfer limits:
-
-- count R2 transfer usage when `transferSource` is `downloaded`
-- treat `cached` confirmations as activations without a new R2 transfer only when the SDK explicitly verified the cached source
-- keep confirmation processing idempotent per app, device, and bundle so retries do not double count usage
+`transferSource` is either `downloaded` or `cached`. It is experimental and client-reported. The API must not use it for billing, transfer limits, quotas, or free-transfer decisions. Keep confirmation processing idempotent per app, device, and bundle so retries do not double count usage.
 
 Only active, non-archived Otalan apps are eligible for OTA checks and install confirmations. If the app is archived, `initializeUpdater()` logs the rejected request and leaves the host app running; low-level `check()` or `sync()` calls reject with the API error.
 
@@ -264,8 +377,8 @@ Only active, non-archived Otalan apps are eligible for OTA checks and install co
 
 - repeated confirmation calls for the same installed bundle are skipped after a successful confirmation
 - failed confirmation calls are retried on a later `ready()` call
-- transfer source markers are stored until confirmation succeeds so they survive the reload between staging and activation
-- partial rollouts require a stable device ID
+- experimental transfer source markers are stored until confirmation succeeds so they survive the reload between staging and activation
+- `initializeUpdater()` will create and persist `deviceId` for you unless you override it
 - archived apps do not receive updates until they are restored in Otalan
 - production API URL is usually `https://api.otalan.com`
 - local development API URL is usually `http://localhost:8787` only when the native runtime can reach that host. Physical devices usually need your machine's LAN IP, Android emulators usually need `10.0.2.2`, and plain HTTP may require platform cleartext/ATS development settings.

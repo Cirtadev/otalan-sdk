@@ -29,13 +29,16 @@ import type {
   CapacitorSyncTrigger,
   CapacitorTransferSource,
   CapacitorUpdaterConfig,
+  DeviceIdStorage,
   InitializeCapacitorUpdaterConfig,
   OtaCheckResponse,
 } from './types'
 
+const DEFAULT_DEVICE_ID_STORAGE_KEY = 'otalan-device-id'
 const TRANSFER_SOURCE_STORAGE_KEY_PREFIX = 'otalan:capacitor:transfer-source:'
 
 export type InitializedCapacitorUpdater = {
+  getDeviceId: () => Promise<string | null>
   getUpdater: () => Promise<ReturnType<typeof createUpdater> | null>
   sync: (trigger?: CapacitorSyncTrigger) => Promise<CapacitorSyncResult | null>
 }
@@ -46,6 +49,8 @@ export async function initializeUpdater(
   const logger = config.logger ?? console
   const onResume = config.onResume ?? true
 
+  let deviceId: string | null = config.deviceId || null
+  let deviceIdPromise: Promise<string | null> | null = null
   let initializePromise: Promise<void> | null = null
   let updaterPromise: Promise<ReturnType<typeof createUpdater> | null> | null = null
   let inFlightSync: Promise<CapacitorSyncResult | null> | null = null
@@ -57,6 +62,34 @@ export async function initializeUpdater(
       && Boolean(config.apiUrl)
       && Boolean(config.apiKey)
     )
+  }
+
+  async function resolveEnabledDeviceId() {
+    if (deviceId !== null) {
+      return deviceId
+    }
+
+    if (deviceIdPromise) {
+      return deviceIdPromise
+    }
+
+    deviceIdPromise = resolveDeviceId(config).then((resolvedDeviceId) => {
+      deviceId = resolvedDeviceId
+      return resolvedDeviceId
+    }).catch((error) => {
+      logger.warn('Otalan device ID initialization failed.', serializeErrorForLog(error))
+      return null
+    })
+
+    return deviceIdPromise
+  }
+
+  async function getDeviceId() {
+    if (!isEnabled()) {
+      return config.deviceId || null
+    }
+
+    return resolveEnabledDeviceId()
   }
 
   async function getUpdater(): Promise<ReturnType<typeof createUpdater> | null> {
@@ -144,6 +177,11 @@ export async function initializeUpdater(
     }
 
     const appId = config.appId ?? (await CapacitorApp.getInfo()).id
+    const deviceId = await resolveEnabledDeviceId()
+    if (!deviceId) {
+      return null
+    }
+
     const updaterConfig: CapacitorUpdaterConfig = {
       apiUrl: config.apiUrl,
       apiKey: config.apiKey,
@@ -151,7 +189,7 @@ export async function initializeUpdater(
       channel: config.channel,
       nativeVersion: config.nativeVersion,
       platform,
-      deviceId: config.deviceId,
+      deviceId,
       autoConfirm: config.autoConfirm,
       reloadOnSync: config.reloadOnSync,
       headers: config.headers,
@@ -162,6 +200,7 @@ export async function initializeUpdater(
   }
 
   const updater = {
+    getDeviceId,
     getUpdater,
     sync,
   }
@@ -438,6 +477,61 @@ function getTransferSourceStorage() {
   } catch {
     return undefined
   }
+}
+
+function getDefaultDeviceIdStorage(): DeviceIdStorage | undefined {
+  const storage = getTransferSourceStorage()
+
+  if (!storage) {
+    return undefined
+  }
+
+  return {
+    getItem: async (key) => storage.getItem(key),
+    setItem: async (key, value) => {
+      storage.setItem(key, value)
+    },
+  }
+}
+
+function createDeviceId() {
+  const randomPart = Math.random().toString(36).slice(2, 10)
+  return `otalan-capacitor-${Date.now().toString(36)}-${randomPart}`
+}
+
+async function getOrCreateDeviceId(
+  storage: DeviceIdStorage,
+  storageKey: string,
+) {
+  const existing = await storage.getItem(storageKey)
+
+  if (existing) {
+    return existing
+  }
+
+  const nextDeviceId = createDeviceId()
+  await storage.setItem(storageKey, nextDeviceId)
+  return nextDeviceId
+}
+
+async function resolveDeviceId(config: Pick<
+  InitializeCapacitorUpdaterConfig,
+  'deviceId' | 'deviceIdStorage' | 'deviceIdStorageKey'
+>) {
+  if (config.deviceId) {
+    return config.deviceId
+  }
+
+  const storage = config.deviceIdStorage ?? getDefaultDeviceIdStorage()
+
+  if (!storage) {
+    throw new Error('Otalan Capacitor updater requires deviceId or writable deviceIdStorage.')
+  }
+
+  return getOrCreateDeviceId(
+    storage,
+    config.deviceIdStorageKey ?? DEFAULT_DEVICE_ID_STORAGE_KEY,
+  )
 }
 
 function buildTransferSourceStorageKey(config: Pick<CapacitorUpdaterConfig, 'appId'>, bundleId: string) {

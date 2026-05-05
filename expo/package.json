@@ -1,7 +1,7 @@
 {
   "name": "@otalan/expo",
   "type": "module",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "license": "Apache-2.0",
   "description": "Otalan OTA confirmation helper for Expo and React Native apps using expo-updates.",
   "repository": {

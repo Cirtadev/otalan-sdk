@@ -8,7 +8,7 @@ This package is intentionally small. It does not replace `expo-updates`. Otalan 
 
 - exposes `initializeUpdater()` for app startup
 - reads the currently running Expo update metadata
-- confirms eligible launched OTA updates through `POST /expo/confirm` with transfer source
+- confirms eligible launched OTA updates through `POST /expo/confirm` with experimental transfer source metadata
 - sends the OTA app key through the `x-api-key` header on that confirm request
 
 ## What This Package Does Not Do
@@ -83,11 +83,13 @@ Example `app.json` or `app.config.json`:
 
 Your backend is still responsible for manifest responses and authenticated asset delivery.
 
-Use `checkAutomatically` with an active update policy such as `ON_LOAD` or `ALWAYS`.
+Use `checkAutomatically` with an active update policy such as `ON_LOAD` or `ALWAYS` when your rollout selection does not depend on runtime headers. For staged rollouts that need a runtime `x-device-id`, use manual checks so JS can set the real header first.
 
 Otalan protects Expo asset URLs with the same OTA API key. Include `x-api-key` or `authorization` on the `/expo/updates` request; the manifest response will pass the matching `assetRequestHeaders` to the Expo runtime for `/expo/assets/...` downloads.
 
-Partial rollouts for Expo require a stable `x-device-id` header on update checks. Static config alone is not enough for that. If you need Expo staged rollouts, create or load the stable ID in your app, pass it as `deviceId` to `initializeUpdater()`, and wire that same value into your `expo-updates` request headers before calling `Updates.checkForUpdateAsync()`.
+Partial rollouts for Expo require a stable `x-device-id` header on update checks. Static config alone is not enough for that. If you need Expo staged rollouts, either pass your own stable `deviceId` to `initializeUpdater()` or read the SDK-managed value with `getDeviceId()`, then wire that same value into your `expo-updates` request headers before calling `Updates.checkForUpdateAsync()`.
+
+If you use `Updates.setUpdateRequestHeadersOverride()`, Expo requires every runtime-overridden header to already be declared in `updates.requestHeaders` in native config. For staged rollouts, declare `x-device-id` there and use manual checks when you need JS to set the real device ID before checking for updates.
 
 ## Quick Start
 
@@ -96,11 +98,13 @@ Call `initializeUpdater()` once during app startup:
 ```ts
 import { initializeUpdater } from '@otalan/expo'
 
-await initializeUpdater({
+const otalan = await initializeUpdater({
   apiUrl: 'https://api.otalan.com',
   apiKey: 'otalan_ota_xxx',
   appId: 'com.example.app',
 })
+
+const deviceId = await otalan.getDeviceId()
 ```
 
 ## Expo Example
@@ -169,6 +173,57 @@ await initializeUpdater({
 })
 ```
 
+## Staged Rollout Example
+
+Use this shape when the rollout decision depends on `x-device-id`.
+
+Declare the header in native config before building the app:
+
+```json
+{
+  "expo": {
+    "updates": {
+      "requestHeaders": {
+        "x-api-key": "otalan_ota_xxx",
+        "x-device-id": ""
+      },
+      "checkAutomatically": "NEVER"
+    }
+  }
+}
+```
+
+```ts
+import * as Updates from 'expo-updates'
+import { initializeUpdater } from '@otalan/expo'
+
+export async function startOtalanUpdates() {
+  const otalan = await initializeUpdater({
+    apiUrl: 'https://api.otalan.com',
+    apiKey: 'otalan_ota_xxx',
+    appId: 'com.example.app',
+  })
+
+  const deviceId = await otalan.getDeviceId()
+  if (!deviceId) {
+    return otalan
+  }
+
+  Updates.setUpdateRequestHeadersOverride({
+    'x-api-key': 'otalan_ota_xxx',
+    'x-device-id': deviceId,
+  })
+
+  const update = await Updates.checkForUpdateAsync()
+  if (update.isAvailable) {
+    await Updates.fetchUpdateAsync()
+    await Updates.reloadAsync()
+  }
+
+  return otalan
+}
+```
+
 ## Update Flow
 
 Use `expo-updates` directly for check, fetch, and reload:
@@ -184,7 +239,7 @@ if (update.isAvailable) {
 }
 ```
 
-The helper does not fetch or stage Expo updates itself, so it cannot reliably prove whether the Expo runtime loaded a cached update or a freshly downloaded one. For billing, analytics, and limits, `@otalan/expo` sends `transferSource: "downloaded"` by default on confirmation. This is the conservative source for Expo and bare React Native because cached-source detection is not available in this helper.
+The helper does not fetch or stage Expo updates itself, so it cannot reliably prove whether the Expo runtime loaded a cached update or a freshly downloaded one. `@otalan/expo` sends `transferSource: "downloaded"` by default on confirmation, but this field is experimental client-reported metadata. The API must not use it for billing, transfer limits, quotas, or free-transfer decisions.
 
 Unlike `@otalan/capacitor`, this package does not report `cached` confirmations. The Capacitor SDK controls the bundle download/staging flow and can ask the live-update plugin whether a bundle already exists on the device. The Expo helper only observes the currently launched update through `expo-updates`, so it cannot distinguish a cached launch from a freshly downloaded launch with enough confidence.
 
@@ -195,6 +250,7 @@ Unlike `@otalan/capacitor`, this package does not report `cached` confirmations.
 - creates the low-level helper
 - runs `ready()` once during startup
 - creates and persists a stable `deviceId` unless you provide one
+- exposes the resolved `deviceId` through `getDeviceId()`
 - no-ops outside native iOS and Android
 - no-ops when `expo-updates` is disabled
 - no-ops when `apiUrl` or `apiKey` are missing
@@ -217,6 +273,12 @@ Config:
 - `headers`: optional extra request headers
 - `logger`: optional warning logger
 
+Returns a low-level Expo updater:
+
+- `getCurrentUpdate()`: returns `Promise<ExpoReadyResult>`
+- `confirmCurrentUpdate()`: returns `Promise<ExpoReadyResult>`
+- `ready()`: returns `Promise<ExpoReadyResult>`
+
 ### `await initializeUpdater(config)`
 
 Config:
@@ -230,8 +292,23 @@ Config:
 
 Returns:
 
+- `getDeviceId()`: resolves the stable device ID or `null` when no updater is enabled and no explicit ID was provided
 - `getUpdater()`: returns the helper or `null`
 - `ready()`: runs startup confirmation and returns `ExpoReadyResult | null`
+
+### `await initialized.getDeviceId()`
+
+Returns `Promise<string | null>`.
+
+### `initialized.getUpdater()`
+
+Returns the low-level updater from `createUpdater(config)`, or `null` when the startup helper is disabled.
+
+### `await initialized.ready()`
+
+Runs startup confirmation through the low-level updater.
+
+Returns `Promise<ExpoReadyResult | null>`.
 
 ### Package Metadata Exports
 
@@ -242,21 +319,21 @@ These values are included in SDK warning logs.
 
 ### `await updater.getCurrentUpdate()`
 
-Returns:
+Returns `Promise<ExpoReadyResult>`:
 
 - `enabled`
 - `confirmed`
 - `isEmbeddedLaunch`
 - `isEmergencyLaunch`
 - `runtimeVersion`
-- `transferSource`
+- `transferSource` (experimental)
 - `updateId`
 
 ### `await updater.confirmCurrentUpdate()`
 
 Calls `POST /expo/confirm` for the currently running downloaded update.
 
-Confirmed results include `transferSource: "downloaded"`.
+Confirmed results include experimental `transferSource: "downloaded"` metadata.
 
 By default this skips:
 
@@ -270,6 +347,20 @@ By default this skips:
 
 Alias for `confirmCurrentUpdate()` with warning logging fallback.
 
+Returns `Promise<ExpoReadyResult>`. If confirmation fails, it logs a warning and returns the current update metadata.
+
+### Result Types
+
+`ExpoReadyResult`:
+
+- `enabled`: whether `expo-updates` is active for this runtime
+- `confirmed`: whether the current update was confirmed by this call
+- `isEmbeddedLaunch`: whether the embedded app bundle is running
+- `isEmergencyLaunch`: whether Expo launched in emergency mode
+- `runtimeVersion`: current runtime version when available
+- `transferSource`: experimental transfer metadata when confirmation succeeds
+- `updateId`: current Expo update ID when available
+
 ## Backend Contract
 
 The backend must expose:
@@ -278,7 +369,7 @@ The backend must expose:
 - authenticated asset routes referenced by that manifest
 - `POST /expo/confirm` when confirmation tracking is enabled
 
-`POST /expo/confirm` requires `deviceId` and `transferSource`.
+`POST /expo/confirm` requires `deviceId` and still accepts `transferSource` as experimental metadata.
 
 The SDK calls `POST /expo/confirm` by default for eligible launched OTA updates. If you do not expose this endpoint, disable confirmation with `autoConfirm: false` or expect warning logs and missing confirmation analytics.
 
@@ -295,7 +386,7 @@ Confirm payload:
 }
 ```
 
-`transferSource` is either `downloaded` or `cached` across Otalan mobile SDKs. This package always sends `downloaded` because it does not control update fetching and cannot confidently detect cached Expo launches. Keep confirmation processing idempotent per app, device, and update so retries do not double count usage.
+`transferSource` is either `downloaded` or `cached` across Otalan mobile SDKs. This package always sends `downloaded` because it does not control update fetching and cannot confidently detect cached Expo launches. Treat this field as experimental client-reported metadata only. Keep confirmation processing idempotent per app, device, and update so retries do not double count usage.
 
 Asset requests require the project OTA API key. Otalan's manifest response supplies `assetRequestHeaders` when the update request includes `x-api-key` or `authorization`.
 
@@ -304,9 +395,10 @@ Only active, non-archived Otalan apps are eligible for Expo updates and install 
 ## Notes
 
 - `initializeUpdater()` will create and persist `deviceId` for you unless you override it
+- use `getDeviceId()` when another part of your Expo update flow needs the same SDK-managed ID
 - `apiKey` is the public OTA app key and is sent in `x-api-key`
 - repeated and concurrent confirmation calls for the same launched update are skipped
-- Expo and bare React Native confirmations use `downloaded` as the transfer source default
+- Expo and bare React Native confirmations use `downloaded` as the experimental transfer source metadata default
 - archived apps do not receive updates until they are restored in Otalan
 - production API URL is usually `https://api.otalan.com`
 - local development API URLs must be reachable from the native runtime. Physical devices usually need your machine's LAN IP, Android emulators usually need `10.0.2.2`, and plain HTTP may require platform cleartext/ATS development settings.

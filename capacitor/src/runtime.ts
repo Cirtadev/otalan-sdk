@@ -35,7 +35,7 @@ export function resolvePlatform(config: CapacitorUpdaterConfig) {
 
 export function requireDeviceId(config: Pick<CapacitorUpdaterConfig, 'deviceId'>) {
   if (!config.deviceId) {
-    throw new Error('Otalan Capacitor updater requires deviceId because POST /capacitor/confirm requires it.')
+    throw new Error('Otalan Capacitor updater requires deviceId because POST /capacitor/check and POST /capacitor/confirm require it.')
   }
 
   return config.deviceId

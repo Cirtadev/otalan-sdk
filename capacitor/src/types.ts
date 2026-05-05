@@ -1,4 +1,4 @@
-export type OtaCheckResponse =
+export type CapacitorCheckResult =
   | { updateAvailable: false }
   | {
     updateAvailable: true
@@ -10,8 +10,19 @@ export type OtaCheckResponse =
     releaseNotes?: string | null
   }
 
+export type OtaCheckResponse = CapacitorCheckResult
+
 export type OtaPlatform = 'ios' | 'android'
 
+export type DeviceIdStorage = {
+  getItem: (key: string) => Promise<string | null>
+  setItem: (key: string, value: string) => Promise<void>
+}
+
+/**
+ * @experimental Transfer source is client-reported metadata and must not be
+ * used for billing, transfer limits, or quota decisions.
+ */
 export type CapacitorTransferSource = 'downloaded' | 'cached'
 
 export type CapacitorUpdaterConfig = {
@@ -35,6 +46,10 @@ export type CapacitorSyncResult =
     applied: boolean
     bundleId: string
     mandatory: boolean
+    /**
+     * @experimental Client-reported transfer metadata. Do not use it for
+     * billing, transfer limits, or quota decisions.
+     */
     transferSource: CapacitorTransferSource
     releaseNotes?: string | null
     reloadRequired?: boolean
@@ -42,8 +57,11 @@ export type CapacitorSyncResult =
 
 export type CapacitorSyncTrigger = 'launch' | 'resume' | 'manual'
 
-export type InitializeCapacitorUpdaterConfig = Omit<CapacitorUpdaterConfig, 'appId' | 'logger'> & {
+export type InitializeCapacitorUpdaterConfig = Omit<CapacitorUpdaterConfig, 'appId' | 'deviceId' | 'logger'> & {
   appId?: string
+  deviceId?: string
+  deviceIdStorage?: DeviceIdStorage
+  deviceIdStorageKey?: string
   enabled?: boolean
   onResume?: boolean
   logger?: Pick<Console, 'warn' | 'info'>

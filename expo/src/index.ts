@@ -13,6 +13,10 @@ export type DeviceIdStorage = {
   setItem: (key: string, value: string) => Promise<void>
 }
 
+/**
+ * @experimental Transfer source is client-reported metadata and must not be
+ * used for billing, transfer limits, or quota decisions.
+ */
 export type ExpoTransferSource = 'downloaded' | 'cached'
 
 export type ExpoUpdaterConfig = {
@@ -31,6 +35,10 @@ export type ExpoReadyResult = {
   isEmbeddedLaunch: boolean
   isEmergencyLaunch: boolean
   runtimeVersion?: string
+  /**
+   * @experimental Client-reported transfer metadata. Do not use it for billing,
+   * transfer limits, or quota decisions.
+   */
   transferSource?: ExpoTransferSource
   updateId?: string
 }
@@ -44,6 +52,7 @@ export type InitializeExpoUpdaterConfig = Omit<ExpoUpdaterConfig, 'deviceId' | '
 }
 
 export type InitializedExpoUpdater = {
+  getDeviceId: () => Promise<string | null>
   getUpdater: () => ReturnType<typeof createUpdater> | null
   ready: () => Promise<ExpoReadyResult | null>
 }
@@ -230,6 +239,7 @@ export async function initializeUpdater(
   config: InitializeExpoUpdaterConfig,
 ): Promise<InitializedExpoUpdater> {
   const logger = config.logger ?? console
+  let deviceId: string | null = config.deviceId || null
   let readyPromise: Promise<ExpoReadyResult | null> | null = null
   let updater: ReturnType<typeof createUpdater> | null = null
 
@@ -244,21 +254,29 @@ export async function initializeUpdater(
 
   if (isEnabled()) {
     try {
+      if (deviceId === null) {
+        deviceId = await getOrCreateDeviceId(
+          config.deviceIdStorage ?? AsyncStorage,
+          config.deviceIdStorageKey ?? DEFAULT_DEVICE_ID_STORAGE_KEY,
+        )
+      }
+
       updater = createUpdater({
         apiUrl: config.apiUrl,
         apiKey: config.apiKey,
         appId: config.appId,
         autoConfirm: config.autoConfirm,
-        deviceId: config.deviceId ?? await getOrCreateDeviceId(
-          config.deviceIdStorage ?? AsyncStorage,
-          config.deviceIdStorageKey ?? DEFAULT_DEVICE_ID_STORAGE_KEY,
-        ),
+        deviceId,
         headers: config.headers,
         logger,
       })
     } catch (error) {
       logger.warn('Otalan device ID initialization failed.', serializeErrorForLog(error))
     }
+  }
+
+  async function getDeviceId() {
+    return deviceId
   }
 
   function getUpdater() {
@@ -286,6 +304,7 @@ export async function initializeUpdater(
   }
 
   const managedUpdater = {
+    getDeviceId,
     getUpdater,
     ready,
   }
@@ -300,7 +319,7 @@ export function createUpdater(config: ExpoUpdaterConfig) {
   let confirmedUpdateId: string | null = null
   const confirmingUpdatePromises = new Map<string, Promise<ExpoReadyResult>>()
 
-  async function getCurrentUpdate() {
+  async function getCurrentUpdate(): Promise<ExpoReadyResult> {
     if (!Updates.isEnabled) {
       return {
         enabled: false,
@@ -320,7 +339,7 @@ export function createUpdater(config: ExpoUpdaterConfig) {
     } satisfies ExpoReadyResult
   }
 
-  async function confirmCurrentUpdate() {
+  async function confirmCurrentUpdate(): Promise<ExpoReadyResult> {
     const current = await getCurrentUpdate()
 
     if (!current.enabled) {
@@ -387,7 +406,7 @@ export function createUpdater(config: ExpoUpdaterConfig) {
     return confirmationPromise
   }
 
-  async function ready() {
+  async function ready(): Promise<ExpoReadyResult> {
     return confirmCurrentUpdate().catch((error) => {
       logger.warn('Otalan install confirmation failed.', serializeErrorForLog(error))
       return getCurrentUpdate()

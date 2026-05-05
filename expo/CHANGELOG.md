@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.1.0 - 2026-05-05
+
+### Added
+
+- Added `getDeviceId()` on initialized Expo updaters.
+- Added custom `deviceIdStorage` and `deviceIdStorageKey` startup helper options.
+- Added staged rollout documentation showing how to reuse the SDK-managed device ID with `expo-updates` request headers.
+
+### Changed
+
+- Made `deviceId` optional for `initializeUpdater()` while keeping it required for low-level `createUpdater()`.
+- Expanded README examples, API return documentation, and backend contract notes for device ID handling.
+
 ## 1.0.1 - 2026-05-05
 
 ### Fixed
