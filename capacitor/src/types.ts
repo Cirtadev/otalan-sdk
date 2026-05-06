@@ -19,10 +19,7 @@ export type DeviceIdStorage = {
   setItem: (key: string, value: string) => Promise<void>
 }
 
-/**
- * @experimental Transfer source is client-reported metadata and must not be
- * used for billing, transfer limits, or quota decisions.
- */
+/** @experimental Advisory client-reported transfer metadata. */
 export type CapacitorTransferSource = 'downloaded' | 'cached'
 
 export type CapacitorUpdaterConfig = {
@@ -46,10 +43,7 @@ export type CapacitorSyncResult =
     applied: boolean
     bundleId: string
     mandatory: boolean
-    /**
-     * @experimental Client-reported transfer metadata. Do not use it for
-     * billing, transfer limits, or quota decisions.
-     */
+    /** @experimental Advisory client-reported transfer metadata. */
     transferSource: CapacitorTransferSource
     releaseNotes?: string | null
     reloadRequired?: boolean

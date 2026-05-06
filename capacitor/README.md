@@ -6,12 +6,12 @@ This package is the full client-side orchestration layer for Otalan on Capacitor
 
 ## What This Package Does
 
-- calls `POST /capacitor/check`
+- checks Otalan for updates
 - decides whether a bundle should be applied
 - downloads bundles through `@capawesome/capacitor-live-update`
 - sets the next bundle
 - reloads the app when needed
-- confirms successful installs through `POST /capacitor/confirm` with experimental bundle transfer source metadata
+- confirms successful installs with advisory bundle transfer source metadata
 - provides a startup helper through `initializeUpdater()`
 
 The SDK uses Capacitor's native HTTP transport for Otalan API calls on iOS and Android, with browser `fetch()` kept as the non-native fallback.
@@ -83,49 +83,68 @@ const otalan = await initializeUpdater({
 const deviceId = await otalan.getDeviceId()
 ```
 
-## Capacitor Example
+## Vue/Vite Example
 
 ```ts
-// src/ota.ts
+// src/composables/useOtalanUpdates.ts
+import { computed, ref } from 'vue'
 import { initializeUpdater, type InitializedCapacitorUpdater } from '@otalan/capacitor'
 
-// -----------------------------------------------------------------------------
-// Public API
-// -----------------------------------------------------------------------------
+let otalanPromise: Promise<InitializedCapacitorUpdater> | null = null
 
-let otalanUpdater: Promise<InitializedCapacitorUpdater> | null = null
-
-export function startOtalanUpdater() {
-  otalanUpdater ??= initializeUpdater({
-    apiUrl: 'https://api.otalan.com',
-    apiKey: 'otalan_ota_xxx',
-    channel: 'production',
+function getOtalanUpdater() {
+  otalanPromise ??= initializeUpdater({
+    apiUrl: import.meta.env.VITE_OTALAN_API_URL ?? 'https://api.otalan.com',
+    apiKey: import.meta.env.VITE_OTALAN_API_KEY ?? '',
+    appId: import.meta.env.VITE_OTALAN_APP_ID ?? 'com.example.app',
+    channel: import.meta.env.VITE_OTALAN_CHANNEL ?? 'production',
     onResume: true,
   })
 
-  return otalanUpdater
+  return otalanPromise
 }
 
-export async function syncOtalanUpdates() {
-  const otalan = await startOtalanUpdater()
-  return otalan.sync('manual')
+export function useOtalanUpdates() {
+  const isSyncing = ref(false)
+  const status = ref<'idle' | 'skipped' | 'syncing' | 'none' | 'applied' | 'failed'>('idle')
+
+  const canSync = computed(() => Boolean(import.meta.env.VITE_OTALAN_API_KEY))
+
+  async function syncUpdates() {
+    if (!canSync.value || isSyncing.value) {
+      status.value = 'skipped'
+      return null
+    }
+
+    isSyncing.value = true
+    status.value = 'syncing'
+
+    try {
+      const otalan = await getOtalanUpdater()
+      const result = await otalan.sync('manual')
+
+      if (!result) {
+        status.value = 'skipped'
+        return null
+      }
+
+      status.value = result.updateAvailable ? 'applied' : 'none'
+      return result
+    } catch {
+      status.value = 'failed'
+      return null
+    } finally {
+      isSyncing.value = false
+    }
+  }
+
+  return {
+    canSync,
+    isSyncing,
+    status,
+    syncUpdates,
+  }
 }
-
-export async function getOtalanDeviceId() {
-  const otalan = await startOtalanUpdater()
-  return otalan.getDeviceId()
-}
-```
-
-```ts
-// src/main.ts
-import { startOtalanUpdater, syncOtalanUpdates } from './ota'
-
-void startOtalanUpdater()
-
-document.querySelector('#sync-updates')?.addEventListener('click', () => {
-  void syncOtalanUpdates()
-})
 ```
 
 `initializeUpdater()` creates and persists a stable `deviceId` when you do not provide one. Otalan uses that ID for update checks, confirmation, and rollout targeting.
@@ -211,11 +230,11 @@ await updater.sync()
 - logs resume listener registration failures and still runs launch sync
 - deduplicates concurrent sync calls
 - swallows sync failures and logs warnings instead
-- keeps install confirmation best-effort during sync so a slow `POST /capacitor/confirm` cannot block the next update check
+- keeps install confirmation best-effort during sync so a slow confirmation request cannot block the next update check
 
 On a fresh native install, `LiveUpdate.getCurrentBundle()` and `LiveUpdate.getNextBundle()` can both return `null` bundle IDs. That is normal before the device has activated or staged an OTA bundle.
 
-If startup or resume sync logs `[ota] ... sync failed`, the failure happened after the Live Update state checks, usually during `POST /capacitor/check` or bundle download/staging. The SDK logs a serializable `{ sdkName, sdkVersion, name, message }` error payload so native consoles can show the installed SDK version, HTTP status, API message, plugin operation, or fetch failure instead of an empty `{}`.
+If startup or resume sync logs `[ota] ... sync failed`, the failure happened after the Live Update state checks, usually during an update check or bundle download/staging. The SDK logs a serializable `{ sdkName, sdkVersion, name, message }` error payload so native consoles can show the installed SDK version, HTTP status, API message, plugin operation, or fetch failure instead of an empty `{}`.
 
 If the message says `failed before response`, the request did not receive an HTTP response. Check that `apiUrl` is reachable from the device, uses a trusted certificate, and is allowed by platform HTTP security settings.
 
@@ -297,7 +316,7 @@ Returns `Promise<string | undefined>`.
 
 ### `await updater.check()`
 
-Calls `POST /capacitor/check`.
+Checks Otalan for the selected update.
 
 Returns `Promise<CapacitorCheckResult>`.
 
@@ -344,34 +363,13 @@ Returns `Promise<CapacitorSyncResult>`.
 - `releaseNotes`: optional release notes
 - `reloadRequired`: `true` when `reloadOnSync: false` leaves a staged bundle waiting for app reload
 
-## Backend Contract
+## Network Behavior
 
-The backend must expose:
+The SDK sends the OTA app key with Otalan requests. Update checks include the app identifier, platform, channel, native version, current bundle ID when available, and the stable device ID. Install confirmations include the app identifier, platform, bundle ID, stable device ID, and `transferSource`.
 
-- `POST /capacitor/check`
-- `POST /capacitor/confirm`
+`transferSource` is either `downloaded` or `cached`. Treat it as advisory client-reported metadata only.
 
-`POST /capacitor/check` requires `deviceId` so Otalan can target staged rollouts consistently.
-
-`POST /capacitor/confirm` requires `deviceId` and still accepts `transferSource` as experimental metadata.
-
-Confirm payload:
-
-```json
-{
-  "appId": "com.example.app",
-  "platform": "ios",
-  "bundleId": "bundle-123",
-  "deviceId": "device-1",
-  "transferSource": "downloaded"
-}
-```
-
-`transferSource` is either `downloaded` or `cached`. It is experimental and client-reported. The API must not use it for billing, transfer limits, quotas, or free-transfer decisions. Keep confirmation processing idempotent per app, device, and bundle so retries do not double count usage.
-
-Only active, non-archived Otalan apps are eligible for OTA checks and install confirmations. If the app is archived, `initializeUpdater()` logs the rejected request and leaves the host app running; low-level `check()` or `sync()` calls reject with the API error.
-
-`POST /capacitor/check` can also return `409` when the active bundle record exists but its managed archive is no longer available.
+Only active Otalan apps are eligible for OTA checks and install confirmations. If update traffic is unavailable for the app, `initializeUpdater()` logs the rejected request and leaves the host app running; low-level `check()` or `sync()` calls reject with the API error.
 
 ## Notes
 
@@ -379,6 +377,6 @@ Only active, non-archived Otalan apps are eligible for OTA checks and install co
 - failed confirmation calls are retried on a later `ready()` call
 - experimental transfer source markers are stored until confirmation succeeds so they survive the reload between staging and activation
 - `initializeUpdater()` will create and persist `deviceId` for you unless you override it
-- archived apps do not receive updates until they are restored in Otalan
+- apps must be active in Otalan to receive updates
 - production API URL is usually `https://api.otalan.com`
 - local development API URL is usually `http://localhost:8787` only when the native runtime can reach that host. Physical devices usually need your machine's LAN IP, Android emulators usually need `10.0.2.2`, and plain HTTP may require platform cleartext/ATS development settings.

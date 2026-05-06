@@ -13,10 +13,10 @@ Website: [otalan.com](https://otalan.com)
 
 Use this when your app is built with Capacitor and Otalan should handle:
 
-- update checks through `POST /capacitor/check`
+- update checks against Otalan
 - bundle download and staging
 - reload after install
-- install confirmation with experimental transfer source metadata through `POST /capacitor/confirm`
+- install confirmation with advisory transfer source metadata
 
 Package docs: [capacitor/README.md](capacitor/README.md)
 
@@ -24,7 +24,7 @@ Package docs: [capacitor/README.md](capacitor/README.md)
 
 Use this when your app uses Expo or bare React Native with `expo-updates` and you only need:
 
-- startup confirmation with experimental transfer source metadata through `POST /expo/confirm`
+- startup confirmation for launched OTA updates
 - current update metadata
 - a small `initializeUpdater()` helper
 
@@ -34,7 +34,7 @@ Package docs: [expo/README.md](expo/README.md)
 
 ## App Lifecycle
 
-Otalan serves OTA traffic only for active, non-archived apps. When an app is archived in Otalan, the mobile SDKs keep the host app running, but update checks and install confirmations for that app are rejected by the API until the app is restored.
+Otalan serves OTA traffic only for apps that are active in Otalan. If update traffic is unavailable for an app, the mobile SDKs keep the host app running and surface or log the request failure according to the helper being used.
 
 ## Device IDs
 

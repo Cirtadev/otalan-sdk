@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.1 - 2026-05-06
+
+### Changed
+
+- Reworked public README wording to remove backend-only contract details from the npm package page.
+- Replaced the generic Expo example with a React hook example.
+- Clarified staged rollout config with `x-api-key`, placeholder `x-device-id`, and `checkAutomatically: "NEVER"`.
+- Reworded transfer source type comments and missing device ID errors as SDK-facing guidance.
+
 ## 1.1.0 - 2026-05-05
 
 ### Added
@@ -11,7 +20,7 @@
 ### Changed
 
 - Made `deviceId` optional for `initializeUpdater()` while keeping it required for low-level `createUpdater()`.
-- Expanded README examples, API return documentation, and backend contract notes for device ID handling.
+- Expanded README examples, API return documentation, and network behavior notes for device ID handling.
 
 ## 1.0.1 - 2026-05-05
 

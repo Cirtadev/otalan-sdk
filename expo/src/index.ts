@@ -13,10 +13,7 @@ export type DeviceIdStorage = {
   setItem: (key: string, value: string) => Promise<void>
 }
 
-/**
- * @experimental Transfer source is client-reported metadata and must not be
- * used for billing, transfer limits, or quota decisions.
- */
+/** @experimental Advisory client-reported transfer metadata. */
 export type ExpoTransferSource = 'downloaded' | 'cached'
 
 export type ExpoUpdaterConfig = {
@@ -35,10 +32,7 @@ export type ExpoReadyResult = {
   isEmbeddedLaunch: boolean
   isEmergencyLaunch: boolean
   runtimeVersion?: string
-  /**
-   * @experimental Client-reported transfer metadata. Do not use it for billing,
-   * transfer limits, or quota decisions.
-   */
+  /** @experimental Advisory client-reported transfer metadata. */
   transferSource?: ExpoTransferSource
   updateId?: string
 }
@@ -115,7 +109,7 @@ function isNativeOtaPlatform(platform: string): platform is 'ios' | 'android' {
 
 function requireDeviceId(config: Pick<ExpoUpdaterConfig, 'deviceId'>) {
   if (!config.deviceId) {
-    throw new Error('Otalan Expo updater requires deviceId because POST /expo/confirm requires it.')
+    throw new Error('Otalan Expo updater requires a stable deviceId.')
   }
 
   return config.deviceId

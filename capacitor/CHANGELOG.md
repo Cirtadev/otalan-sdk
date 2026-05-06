@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.1 - 2026-05-06
+
+### Changed
+
+- Reworked public README wording to remove backend-only contract details from the npm package page.
+- Replaced the generic Capacitor example with a Vue/Vite composable example.
+- Reworded transfer source type comments and missing device ID errors as SDK-facing guidance.
+
 ## 1.1.0 - 2026-05-05
 
 ### Added
@@ -13,7 +21,7 @@
 
 - Made `deviceId` optional for `initializeUpdater()` while keeping it required for low-level `createUpdater()`.
 - Logged device ID storage initialization failures from `initializeUpdater()` and returned a no-op updater.
-- Expanded README examples, API return documentation, and backend contract notes for device ID handling.
+- Expanded README examples, API return documentation, and network behavior notes for device ID handling.
 
 ## 1.0.1 - 2026-05-05
 

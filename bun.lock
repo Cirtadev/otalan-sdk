@@ -9,14 +9,14 @@
         "@stylistic/eslint-plugin": "^5.10.0",
         "@typescript-eslint/parser": "^8.59.2",
         "eslint": "^10.3.0",
-        "jiti": "^2.6.1",
+        "jiti": "^2.7.0",
         "typescript": "^6.0.3",
         "typescript-eslint": "^8.59.2",
       },
     },
     "capacitor": {
       "name": "@otalan/capacitor",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "peerDependencies": {
         "@capacitor/app": ">=7.0.0 <9",
         "@capacitor/core": ">=7.0.0 <9",
@@ -25,7 +25,7 @@
     },
     "expo": {
       "name": "@otalan/expo",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "dependencies": {
         "@react-native-async-storage/async-storage": "^2.2.0",
       },
@@ -672,7 +672,7 @@
 
     "jimp-compact": ["jimp-compact@0.16.1", "", {}, "sha512-dZ6Ra7u1G8c4Letq/B5EzAxj4tLFHL+cGtdpR+PVm4yzPDj+lCk+AbivWt1eOM+ikzkowtyV7qSqX6qr3t71Ww=="],
 
-    "jiti": ["jiti@2.6.1", "", { "bin": { "jiti": "lib/jiti-cli.mjs" } }, "sha512-ekilCSN1jwRvIbgeg/57YFh8qQDNbwDb9xT/qu2DAHbFFZUicIl4ygVaAvzveMhMVr3LnpSKTNnwt8PoOfmKhQ=="],
+    "jiti": ["jiti@2.7.0", "", { "bin": { "jiti": "lib/jiti-cli.mjs" } }, "sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ=="],
 
     "js-tokens": ["js-tokens@4.0.0", "", {}, "sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ=="],
 
