@@ -3,7 +3,7 @@
 Monorepo for the Otalan mobile OTA SDK packages:
 
 - `@otalan/capacitor`: full Otalan OTA client for Capacitor apps
-- `@otalan/expo`: small confirmation helper for Expo and bare React Native apps using `expo-updates`
+- `@otalan/expo`: small confirmation helper for Expo apps using `expo-updates`
 
 Website: [otalan.com](https://otalan.com)
 
@@ -22,7 +22,7 @@ Package docs: [capacitor/README.md](capacitor/README.md)
 
 ### `@otalan/expo`
 
-Use this when your app uses Expo or bare React Native with `expo-updates` and you only need:
+Use this when your app uses Expo with `expo-updates` and you only need:
 
 - startup confirmation for launched OTA updates
 - current update metadata
@@ -105,17 +105,16 @@ The SDK packages can be installed and used from development machines running Win
 Runtime support is for native mobile apps:
 
 - iOS and Android apps built with Capacitor through `@otalan/capacitor`
-- iOS and Android apps using Expo or bare React Native with `expo-updates` through `@otalan/expo`
+- iOS and Android apps using supported Expo SDK versions with `expo-updates` through `@otalan/expo`
 
 ## Version Support
 
-- `@otalan/capacitor` supports Capacitor 7 and 8.
-- `@otalan/expo` supports Expo SDK 54 and 55.
-- Bare React Native support covers React Native 0.84 and 0.85 when paired with a compatible `expo-updates` setup.
+- `@otalan/capacitor` officially supports Capacitor 7 and 8.
+- `@otalan/expo` officially supports Expo SDK 54 and 55.
 
-See each package README for exact peer dependency ranges.
+The package peer dependencies are intentionally permissive so unsupported combinations can still install and be evaluated.
 
-Older versions may work, but they are outside the supported range. We do not offer support for unsupported versions and do not take responsibility for issues caused by using them.
+Other runtimes and older Expo or Capacitor versions may work, but they are outside the official support range for the moment. We do not offer support for unsupported combinations and do not take responsibility for issues caused by using them.
 
 ## Consumer Install
 
@@ -129,13 +128,13 @@ For Capacitor apps:
 npm install @otalan/capacitor @capawesome/capacitor-live-update @capacitor/app @capacitor/core
 ```
 
-For Expo or bare React Native apps using `expo-updates`:
+For Expo apps using `expo-updates`:
 
 ```bash
 npm install @otalan/expo expo-updates
 ```
 
-Peer dependencies are documented in each package README.
+Official support ranges are documented in each package README.
 
 ## Repo Layout
 

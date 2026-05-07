@@ -1,6 +1,6 @@
 # `@otalan/expo`
 
-Otalan startup confirmation helper for Expo and bare React Native apps using `expo-updates`.
+Otalan startup confirmation helper for Expo apps using `expo-updates`.
 
 This package is intentionally small. It does not replace `expo-updates`. Update selection, manifest responses, authenticated asset delivery, fetching, and reloading are handled by Otalan plus the `expo-updates` runtime.
 
@@ -21,21 +21,18 @@ This package is intentionally small. It does not replace `expo-updates`. Update 
 
 ## What You Need
 
-- an Expo app or bare React Native app using `expo-updates`
+- an Expo app using `expo-updates`
 - a working Otalan `expo-updates` endpoint
 - an Otalan OTA app key
 
 ## Supported Versions
 
-This package supports Expo SDK 54 and 55:
+This package officially supports Expo SDK 54 and 55:
 
-- Expo SDK 54 through `expo-updates >=29.0.0 <30`
-- Expo SDK 55 through `expo-updates >=55.0.0 <56`
-- bare React Native 0.84 and 0.85 with a compatible `expo-updates` setup
+- Expo SDK 54
+- Expo SDK 55
 
-The `react-native` peer dependency also accepts the React Native versions bundled by supported Expo SDKs: React Native 0.81 for Expo SDK 54 and React Native 0.83 for Expo SDK 55. Those versions are accepted for Expo apps only; bare React Native support is limited to React Native 0.84 and 0.85.
-
-Older versions may work, but they are outside the supported range. We do not offer support for unsupported versions and do not take responsibility for issues caused by using them.
+The package peer dependencies are intentionally permissive so other runtimes and older Expo SDK versions can still install and be evaluated. Other runtimes and older Expo SDK versions may work, but they are outside the official support range for the moment. We do not offer support for unsupported combinations and do not take responsibility for issues caused by using them.
 
 ## Install
 
@@ -197,27 +194,6 @@ export function useOtalanUpdates() {
     status,
     checkForUpdate,
   }
-}
-```
-
-## Bare React Native Example
-
-The same helper works in bare React Native as long as `expo-updates` is installed and configured:
-
-```ts
-import { useEffect } from 'react'
-import { initializeUpdater } from '@otalan/expo'
-
-export function App() {
-  useEffect(() => {
-    void initializeUpdater({
-      apiUrl: 'https://api.otalan.com',
-      apiKey: 'otalan_ota_xxx',
-      appId: 'com.example.app',
-    })
-  }, [])
-
-  return null
 }
 ```
 
@@ -422,7 +398,7 @@ Only active Otalan apps are eligible for Expo updates and install confirmations.
 - use `getDeviceId()` when another part of your Expo update flow needs the same SDK-managed ID
 - `apiKey` is the public OTA app key and is sent in `x-api-key`
 - repeated and concurrent confirmation calls for the same launched update are skipped
-- Expo and bare React Native confirmations use `downloaded` as the experimental transfer source metadata default
+- Expo confirmations use `downloaded` as the experimental transfer source metadata default
 - apps must be active in Otalan to receive updates
 - production API URL is usually `https://api.otalan.com`
 - local development API URLs must be reachable from the native runtime. Physical devices usually need your machine's LAN IP, Android emulators usually need `10.0.2.2`, and plain HTTP may require platform cleartext/ATS development settings.

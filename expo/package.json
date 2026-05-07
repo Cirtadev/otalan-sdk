@@ -1,9 +1,9 @@
 {
   "name": "@otalan/expo",
   "type": "module",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "license": "Apache-2.0",
-  "description": "Otalan OTA confirmation helper for Expo and React Native apps using expo-updates.",
+  "description": "Otalan OTA confirmation helper for Expo apps using expo-updates.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Cirtadev/otalan-sdk.git",
@@ -33,7 +33,6 @@
   "keywords": [
     "expo",
     "expo-updates",
-    "react-native",
     "ota",
     "mobile",
     "otalan"
@@ -54,7 +53,7 @@
     "@react-native-async-storage/async-storage": "^2.2.0"
   },
   "peerDependencies": {
-    "expo-updates": ">=29.0.0 <30 || >=55.0.0 <56",
-    "react-native": ">=0.81.0 <0.82.0 || >=0.83.0 <0.86.0"
+    "expo-updates": "*",
+    "react-native": "*"
   }
 }

@@ -16,22 +16,22 @@
     },
     "capacitor": {
       "name": "@otalan/capacitor",
-      "version": "1.1.1",
+      "version": "1.1.2",
       "peerDependencies": {
-        "@capacitor/app": ">=7.0.0 <9",
-        "@capacitor/core": ">=7.0.0 <9",
-        "@capawesome/capacitor-live-update": ">=7.0.0 <9",
+        "@capacitor/app": "*",
+        "@capacitor/core": "*",
+        "@capawesome/capacitor-live-update": "*",
       },
     },
     "expo": {
       "name": "@otalan/expo",
-      "version": "1.1.1",
+      "version": "1.1.2",
       "dependencies": {
         "@react-native-async-storage/async-storage": "^2.2.0",
       },
       "peerDependencies": {
-        "expo-updates": ">=29.0.0 <30 || >=55.0.0 <56",
-        "react-native": ">=0.81.0 <0.82.0 || >=0.83.0 <0.86.0",
+        "expo-updates": "*",
+        "react-native": "*",
       },
     },
   },

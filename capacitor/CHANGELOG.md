@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.2 - 2026-05-07
+
+### Changed
+
+- Clarified that official support covers Capacitor 7 and 8 for the moment.
+- Reworded unsupported-version guidance so older Capacitor versions are not described as broken.
+- Made peer dependency ranges permissive so unsupported Capacitor versions are not blocked at install time.
+
 ## 1.1.1 - 2026-05-06
 
 ### Changed

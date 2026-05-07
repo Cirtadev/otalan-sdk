@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.2 - 2026-05-07
+
+### Changed
+
+- Clarified that official support covers Expo SDK 54 and 55 for the moment.
+- Removed unsupported-runtime support wording and examples from the package docs.
+- Made peer dependency ranges permissive so unsupported Expo SDK and runtime combinations are not blocked at install time.
+
 ## 1.1.1 - 2026-05-06
 
 ### Changed
@@ -35,9 +43,9 @@ Initial public release of `@otalan/expo`.
 
 ### Added
 
-- Added Expo and bare React Native startup confirmation with `expo-updates`.
+- Added Expo startup confirmation with `expo-updates`.
 - Added authenticated Expo asset request documentation.
-- Added package support ranges for Expo SDK 54 and 55, plus supported bare React Native versions.
+- Added package support ranges for Expo SDK 54 and 55.
 
 ### Changed
 

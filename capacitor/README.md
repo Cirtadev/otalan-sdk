@@ -29,20 +29,16 @@ Use the OTA app key in the app. Do not use a CI key in frontend code.
 
 ## Supported Versions
 
-This package supports Capacitor 7 and 8:
-
-- `@capacitor/core >=7.0.0 <9`
-- `@capacitor/app >=7.0.0 <9`
-- `@capawesome/capacitor-live-update >=7.0.0 <9`
+This package officially supports Capacitor 7 and 8:
 
 Use the matching Capawesome Live Update major for your Capacitor major:
 
 - Capacitor 7 with `@capawesome/capacitor-live-update` 7.x
 - Capacitor 8 with `@capawesome/capacitor-live-update` 8.x
 
-Capacitor 8 is the current upstream major. Capacitor 7 is included for the upstream maintenance window. Capacitor 6 is not in the public support range because it is no longer in upstream community support, even though the SDK code keeps the compatibility fallback used by older Live Update APIs.
+Capacitor 8 is the current upstream major. Capacitor 7 is included for the upstream maintenance window.
 
-Older versions may work, but they are outside the supported range. We do not offer support for unsupported versions and do not take responsibility for issues caused by using them.
+The package peer dependencies are intentionally permissive so older Capacitor versions can still install and be evaluated. Older Capacitor versions may work, but they are outside the official support range for the moment. We do not offer support for unsupported combinations and do not take responsibility for issues caused by using them.
 
 ## Install
 
