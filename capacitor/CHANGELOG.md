@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.3 - 2026-05-11
+
+### Changed
+
+- Documented that selected bundle download URLs are opaque and may point at immutable CDN URLs.
+- Clarified that bundle checksums are passed through unchanged to `LiveUpdate.downloadBundle()`.
+
+### Tests
+
+- Added regression coverage proving Capacitor sync passes selected bundle checksums to the live update plugin.
+
 ## 1.1.2 - 2026-05-07
 
 ### Changed

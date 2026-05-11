@@ -218,6 +218,34 @@ describe('@otalan/capacitor sync regressions', () => {
     expect(capacitorState.reloadCalls).toBe(1)
   })
 
+  test('sync passes SHA-256 hex checksums through to the live update plugin', async () => {
+    const checksum = '0'.repeat(64)
+
+    fetchState.handler = async (url) => {
+      if (url.endsWith('/capacitor/check')) {
+        return Response.json({
+          updateAvailable: true,
+          bundleId: '1.0.0-2',
+          downloadUrl: 'https://cdn.example.com/1.0.0-2.zip',
+          checksum,
+          mandatory: true,
+        })
+      }
+
+      return new Response(null, { status: 204 })
+    }
+
+    await createUpdaterForCryptosan().sync()
+
+    expect(capacitorState.downloadCalls).toEqual([
+      {
+        url: 'https://cdn.example.com/1.0.0-2.zip',
+        bundleId: '1.0.0-2',
+        checksum,
+      },
+    ])
+  })
+
   test('sync checks for newer bundles while current bundle confirmation is pending', async () => {
     capacitorState.readyResult = { currentBundleId: '1.0.0-2' }
     capacitorState.currentBundle = { bundleId: '1.0.0-2' }

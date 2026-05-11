@@ -2,7 +2,7 @@
 
 Otalan startup confirmation helper for Expo apps using `expo-updates`.
 
-This package is intentionally small. It does not replace `expo-updates`. Update selection, manifest responses, authenticated asset delivery, fetching, and reloading are handled by Otalan plus the `expo-updates` runtime.
+This package is intentionally small. It does not replace `expo-updates`. Update selection, manifest responses, asset URL delivery, fetching, and reloading are handled by Otalan plus the `expo-updates` runtime.
 
 ## What This Package Does
 
@@ -79,11 +79,11 @@ Example `app.json` or `app.config.json`:
 }
 ```
 
-Your configured update service is still responsible for manifest responses and authenticated asset delivery.
+Your configured update service is still responsible for manifest responses and asset URLs. Manifests can include direct immutable CDN asset URLs.
 
 Use `checkAutomatically` with an active update policy such as `ON_LOAD` or `WIFI_ONLY` when your rollout selection does not depend on runtime headers. For staged rollouts that need a runtime `x-device-id`, use manual checks so JS can set the real header first.
 
-Otalan protects Expo assets with the same OTA app key. Include `x-api-key` or `authorization` on update checks so the manifest can pass the matching asset request headers to the Expo runtime.
+Otalan protects Expo update checks with the OTA app key. Include `x-api-key` or `authorization` on update checks so the manifest endpoint can authenticate the request and apply rollout and quota rules.
 
 Partial rollouts for Expo require a stable `x-device-id` header on update checks. Static config alone is not enough for that. If you need Expo staged rollouts, either pass your own stable `deviceId` to `initializeUpdater()` or read the SDK-managed value with `getDeviceId()`, then wire that same value into your `expo-updates` request headers before calling `Updates.checkForUpdateAsync()`.
 
@@ -388,7 +388,11 @@ The SDK sends the OTA app key in `x-api-key` on confirmation requests. Confirmat
 
 `transferSource` is either `downloaded` or `cached` across Otalan mobile SDKs. This package always sends `downloaded` because it does not control update fetching and cannot confidently detect cached Expo launches. Treat this field as advisory client-reported metadata only.
 
-Asset requests require the OTA app key. Otalan manifest responses supply asset request headers when update checks include `x-api-key` or `authorization`.
+Update manifest requests require the OTA app key. Manifests can include direct immutable CDN asset URLs; `expo-updates` consumes those manifest-provided URLs and this SDK only confirms the launched update.
+
+Asset requests do not depend on this SDK or SDK-provided request headers.
+
+This SDK does not add SDK-side SHA verification for Expo assets. Asset integrity checks belong to the Expo runtime and manifest metadata; the server manifest must still provide the correct asset hash and key values.
 
 Only active Otalan apps are eligible for Expo updates and install confirmations. If update traffic is unavailable for the app, `ready()` logs confirmation failures and returns the current update metadata.
 

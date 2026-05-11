@@ -343,8 +343,8 @@ Returns `Promise<CapacitorSyncResult>`.
 
 - `updateAvailable`: whether Otalan selected an update
 - `bundleId`: selected bundle ID when an update is available
-- `downloadUrl`: selected bundle URL when an update is available
-- `checksum`: optional bundle checksum
+- `downloadUrl`: selected bundle URL when an update is available. Treat this value as opaque; downloads may come from immutable CDN URLs.
+- `checksum`: optional bundle checksum. Treat this value as opaque; current Otalan APIs return SHA-256 hex and the SDK passes it through to `LiveUpdate.downloadBundle()` unchanged.
 - `mandatory`: whether the update is mandatory
 - `rolloutPercent`: rollout percentage returned by the API
 - `releaseNotes`: optional release notes

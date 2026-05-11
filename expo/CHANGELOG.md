@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.3 - 2026-05-11
+
+### Changed
+
+- Reworded Expo update documentation for direct immutable CDN asset URLs in manifests.
+- Clarified that manifest requests require the OTA app key, while asset requests do not depend on SDK-provided request headers.
+- Clarified that Expo asset integrity belongs to the Expo runtime and manifest hash/key metadata, not to SDK-side SHA verification.
+
 ## 1.1.2 - 2026-05-07
 
 ### Changed
