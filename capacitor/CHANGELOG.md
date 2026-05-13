@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.4 - 2026-05-13
+
+### Changed
+
+- Documented that `enabled: true` force-enables `initializeUpdater()` and bypasses the startup helper's default platform and credential checks.
+
+### Tests
+
+- Split the oversized Capacitor test suite into focused suites with a shared test harness.
+
 ## 1.1.3 - 2026-05-11
 
 ### Changed

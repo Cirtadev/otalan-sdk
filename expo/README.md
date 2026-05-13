@@ -266,7 +266,7 @@ Unlike `@otalan/capacitor`, this package does not report `cached` confirmations.
 
 ## Startup Helper Behavior
 
-`initializeUpdater()`:
+When `enabled` is omitted, `initializeUpdater()`:
 
 - creates the low-level helper
 - runs `ready()` once during startup
@@ -277,6 +277,8 @@ Unlike `@otalan/capacitor`, this package does not report `cached` confirmations.
 - no-ops when `apiUrl` or `apiKey` are missing
 - logs device ID storage failures and returns a no-op updater
 - swallows confirmation failures and logs warnings instead
+
+Pass `enabled: false` to force a no-op. Pass `enabled: true` only when your app has its own runtime/config gate, because it bypasses the default platform, `expo-updates`, and credential checks. With `enabled: true`, missing or invalid `apiUrl` and `apiKey` values can produce startup confirmation warnings instead of the helper silently no-oping.
 
 If startup logs `Otalan install confirmation failed.`, the failure happened during the confirmation request. The SDK logs a serializable `{ sdkName, sdkVersion, name, message }` error payload so native consoles can show the installed SDK version, HTTP status, API message, or fetch failure instead of an empty `{}`.
 
@@ -308,7 +310,7 @@ Config:
 - `deviceId`: optional explicit stable device ID override
 - `deviceIdStorage`: optional async storage adapter with `getItem()` and `setItem()`
 - `deviceIdStorageKey`: optional storage key, defaults to `otalan-device-id`
-- `enabled`: optional explicit gate
+- `enabled`: optional explicit gate. Omit for default platform, `expo-updates`, and credential checks, pass `false` to force-disable, or pass `true` to force initialization and bypass those default checks.
 - `logger`: optional warning logger
 
 Returns:
