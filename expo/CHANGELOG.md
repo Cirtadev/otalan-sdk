@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.4 - 2026-05-13
+
+### Changed
+
+- Documented that `enabled: true` force-enables `initializeUpdater()` and bypasses the startup helper's default platform, `expo-updates`, and credential checks.
+
 ## 1.1.3 - 2026-05-11
 
 ### Changed

@@ -36,6 +36,10 @@ Package docs: [expo/README.md](expo/README.md)
 
 Otalan serves OTA traffic only for apps that are active in Otalan. If update traffic is unavailable for an app, the mobile SDKs keep the host app running and surface or log the request failure according to the helper being used.
 
+## Startup Enablement
+
+When `enabled` is omitted, both startup helpers auto-enable only when their runtime and required credentials are available. Pass `enabled: false` to force a no-op. Pass `enabled: true` only when your app has its own gate, because it bypasses the helper's default platform and credential checks and can surface missing or invalid config as startup request failures.
+
 ## Device IDs
 
 Both package startup helpers can create and persist a stable device ID unless the app provides one. Low-level `createUpdater()` APIs still require an explicit `deviceId`.

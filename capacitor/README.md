@@ -222,7 +222,7 @@ await updater.sync()
 
 ## Startup Helper Behavior
 
-`initializeUpdater()`:
+When `enabled` is omitted, `initializeUpdater()`:
 
 - no-ops outside native iOS and Android
 - no-ops when `apiUrl` or `apiKey` are missing
@@ -236,6 +236,8 @@ await updater.sync()
 - deduplicates concurrent sync calls
 - swallows sync failures and logs warnings instead
 - keeps install confirmation best-effort during sync so a slow confirmation request cannot block the next update check
+
+Pass `enabled: false` to force a no-op. Pass `enabled: true` only when your app has its own runtime/config gate, because it bypasses the default native-platform and credential checks. With `enabled: true`, missing or invalid `apiUrl` and `apiKey` values can produce startup sync warnings instead of the helper silently no-oping.
 
 On a fresh native install, `LiveUpdate.getCurrentBundle()` and `LiveUpdate.getNextBundle()` can both return `null` bundle IDs. That is normal before the device has activated or staged an OTA bundle.
 
@@ -276,7 +278,7 @@ Config:
 - `deviceId`: optional explicit stable device ID override
 - `deviceIdStorage`: optional async storage adapter with `getItem()` and `setItem()`
 - `deviceIdStorageKey`: optional storage key, defaults to `otalan-device-id`
-- `enabled`: optional explicit gate
+- `enabled`: optional explicit gate. Omit for default native-platform and credential checks, pass `false` to force-disable, or pass `true` to force initialization and bypass those default checks.
 - `onResume`: defaults to `true`
 - `logger`: optional warning and info logger
 
