@@ -59,6 +59,25 @@ const otalan = await initializeUpdater({
 const deviceId = await otalan.getDeviceId()
 ```
 
+You can also pass these values from your app's environment variables. For example, keep local values in a `.env` file and read them with the env API provided by your app framework, such as Expo public env vars or Vite's `import.meta.env`.
+
+For Expo apps:
+
+```dotenv
+EXPO_PUBLIC_OTALAN_API_URL=https://api.otalan.com
+EXPO_PUBLIC_OTALAN_API_KEY=otalan_ota_xxx
+EXPO_PUBLIC_OTALAN_APP_ID=com.example.app
+```
+
+For Capacitor apps using Vite:
+
+```dotenv
+VITE_OTALAN_API_URL=https://api.otalan.com
+VITE_OTALAN_API_KEY=otalan_ota_xxx
+VITE_OTALAN_APP_ID=com.example.app
+VITE_OTALAN_CHANNEL=production
+```
+
 Expo startup:
 
 ```ts

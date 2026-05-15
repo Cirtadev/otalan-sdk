@@ -81,6 +81,15 @@ const deviceId = await otalan.getDeviceId()
 
 ## Vue/Vite Example
 
+If you want to use environment variables, store your local Otalan values in your app's `.env` file and expose only client-safe public variables, such as `VITE_OTALAN_API_URL`, `VITE_OTALAN_API_KEY`, `VITE_OTALAN_APP_ID`, and `VITE_OTALAN_CHANNEL`.
+
+```dotenv
+VITE_OTALAN_API_URL=https://api.otalan.com
+VITE_OTALAN_API_KEY=otalan_ota_xxx
+VITE_OTALAN_APP_ID=com.example.app
+VITE_OTALAN_CHANNEL=production
+```
+
 ```ts
 // src/composables/useOtalanUpdates.ts
 import { computed, ref } from 'vue'
