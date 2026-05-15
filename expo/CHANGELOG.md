@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.5 - 2026-05-15
+
+### Changed
+
+- Documented optional `.env` configuration for Expo apps, including the expected `EXPO_PUBLIC_OTALAN_*` variables.
+
 ## 1.1.4 - 2026-05-13
 
 ### Changed
