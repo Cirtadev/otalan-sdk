@@ -158,6 +158,23 @@ function createUpdaterForCryptosan() {
   })
 }
 
+type CompatibleUpdateInput = {
+  bundleId: string
+  downloadUrl: string
+  checksum?: string
+  mandatory?: boolean
+}
+
+function buildCompatibleCryptosanUpdate(input: CompatibleUpdateInput) {
+  return {
+    updateAvailable: true,
+    appId: 'app.cryptosan.app',
+    platform: 'ios',
+    runtimeVersion: capacitorState.versionName,
+    ...input,
+  }
+}
+
 beforeEach(() => {
   capacitorState.currentBundle = { bundleId: undefined }
   capacitorState.nextBundle = { bundleId: undefined }
@@ -185,12 +202,11 @@ describe('@otalan/capacitor sync regressions', () => {
   test('sync applies an OTA bundle when the native app has no current bundle', async () => {
     fetchState.handler = async (url) => {
       if (url.endsWith('/capacitor/check')) {
-        return Response.json({
-          updateAvailable: true,
+        return Response.json(buildCompatibleCryptosanUpdate({
           bundleId: '1.0.0-2',
           downloadUrl: 'https://cdn.example.com/1.0.0-2.zip',
           mandatory: true,
-        })
+        }))
       }
 
       return new Response(null, { status: 204 })
@@ -223,13 +239,12 @@ describe('@otalan/capacitor sync regressions', () => {
 
     fetchState.handler = async (url) => {
       if (url.endsWith('/capacitor/check')) {
-        return Response.json({
-          updateAvailable: true,
+        return Response.json(buildCompatibleCryptosanUpdate({
           bundleId: '1.0.0-2',
           downloadUrl: 'https://cdn.example.com/1.0.0-2.zip',
           checksum,
           mandatory: true,
-        })
+        }))
       }
 
       return new Response(null, { status: 204 })
@@ -261,12 +276,11 @@ describe('@otalan/capacitor sync regressions', () => {
       }
 
       if (url.endsWith('/capacitor/check')) {
-        return Response.json({
-          updateAvailable: true,
+        return Response.json(buildCompatibleCryptosanUpdate({
           bundleId: '1.0.0-3',
           downloadUrl: 'https://cdn.example.com/1.0.0-3.zip',
           mandatory: true,
-        })
+        }))
       }
 
       return new Response(null, { status: 204 })
@@ -296,12 +310,11 @@ describe('@otalan/capacitor sync regressions', () => {
 
     fetchState.handler = async (url) => {
       if (url.endsWith('/capacitor/check')) {
-        return Response.json({
-          updateAvailable: true,
+        return Response.json(buildCompatibleCryptosanUpdate({
           bundleId: '1.0.0-3',
           downloadUrl: 'https://cdn.example.com/1.0.0-3.zip',
           mandatory: true,
-        })
+        }))
       }
 
       return new Response(null, { status: 204 })

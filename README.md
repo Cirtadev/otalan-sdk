@@ -36,6 +36,12 @@ Package docs: [expo/README.md](expo/README.md)
 
 Otalan serves OTA traffic only for apps that are active in Otalan. If update traffic is unavailable for an app, the mobile SDKs keep the host app running and surface or log the request failure according to the helper being used.
 
+## Update Compatibility
+
+Capacitor update checks include the running app identifier, platform, channel, runtime version, current bundle ID when available, and stable device ID. Successful `/capacitor/check` responses must include matching `appId`, `platform`, and `runtimeVersion`; `@otalan/capacitor` validates those values before trusting `updateAvailable` or using any selected bundle.
+
+Expo update selection is handled by `expo-updates` and the Otalan manifest endpoint. `@otalan/expo` observes and confirms the launched update; it does not fetch or stage Expo updates itself.
+
 ## Startup Enablement
 
 When `enabled` is omitted, both startup helpers auto-enable only when their runtime and required credentials are available. Pass `enabled: false` to force a no-op. Pass `enabled: true` only when your app has its own gate, because it bypasses the helper's default platform and credential checks and can surface missing or invalid config as startup request failures.

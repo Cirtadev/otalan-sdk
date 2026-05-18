@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Documented that Expo update selection and runtime compatibility are owned by `expo-updates` and the Otalan manifest endpoint.
+
 ## 1.1.5 - 2026-05-15
 
 ### Changed

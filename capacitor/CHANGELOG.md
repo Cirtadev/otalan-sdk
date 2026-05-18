@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.2.0 - 2026-05-18
+
+### Breaking
+
+- Changed Capacitor update checks to send `runtimeVersion` instead of `nativeVersion` to `/capacitor/check`.
+- Required successful `/capacitor/check` responses to include matching `appId`, `platform`, and `runtimeVersion` before the SDK trusts `updateAvailable` or uses any selected bundle.
+
+### Added
+
+- Added required client-side validation for served `appId`, `platform`, and `runtimeVersion` metadata before update selection results or bundles are trusted.
+
+### Tests
+
+- Added regression coverage for Capacitor update check compatibility context, missing compatibility metadata, and mismatched native version responses.
+
 ## 1.1.5 - 2026-05-15
 
 ### Changed

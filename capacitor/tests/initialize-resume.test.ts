@@ -28,12 +28,21 @@ const capacitorState = {
   addListenerCalls: [] as Array<{ eventName: string; handler: ResumeHandler }>,
 }
 
+function buildCompatibleCheckResponse() {
+  return {
+    updateAvailable: false,
+    appId: capacitorState.appId,
+    platform: capacitorState.platform === 'android' ? 'android' : 'ios',
+    runtimeVersion: capacitorState.versionName,
+  }
+}
+
 const fetchState = {
   calls: [] as FetchCall[],
   handler: async (url: string, init?: RequestInit) => {
     void url
     void init
-    return Response.json({ updateAvailable: false })
+    return Response.json(buildCompatibleCheckResponse())
   },
 }
 
@@ -131,7 +140,7 @@ beforeEach(() => {
   capacitorState.addListenerCalls = []
 
   fetchState.calls = []
-  fetchState.handler = async () => Response.json({ updateAvailable: false })
+  fetchState.handler = async () => Response.json(buildCompatibleCheckResponse())
 })
 
 // -----------------------------------------------------------------------------

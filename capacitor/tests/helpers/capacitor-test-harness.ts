@@ -211,6 +211,15 @@ export function readJsonBody(call: FetchCall) {
   return JSON.parse(String(call.init?.body)) as Record<string, unknown>
 }
 
+export function buildCompatibleCheckResponse(input: Record<string, unknown> = { updateAvailable: false }) {
+  return {
+    appId: capacitorState.appId,
+    platform: capacitorState.platform === 'android' ? 'android' : 'ios',
+    runtimeVersion: capacitorState.versionName,
+    ...input,
+  }
+}
+
 export function resetCapacitorTestHarness() {
   installMemoryLocalStorage()
 

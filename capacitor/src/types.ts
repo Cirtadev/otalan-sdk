@@ -1,6 +1,14 @@
+export type OtaPlatform = 'ios' | 'android'
+
+export type CapacitorUpdateCompatibility = {
+  appId: string
+  platform: OtaPlatform
+  runtimeVersion: string
+}
+
 export type CapacitorCheckResult =
-  | { updateAvailable: false }
-  | {
+  | (CapacitorUpdateCompatibility & { updateAvailable: false })
+  | (CapacitorUpdateCompatibility & {
     updateAvailable: true
     bundleId: string
     downloadUrl: string
@@ -8,11 +16,9 @@ export type CapacitorCheckResult =
     mandatory?: boolean
     rolloutPercent?: number
     releaseNotes?: string | null
-  }
+  })
 
 export type OtaCheckResponse = CapacitorCheckResult
-
-export type OtaPlatform = 'ios' | 'android'
 
 export type DeviceIdStorage = {
   getItem: (key: string) => Promise<string | null>
@@ -28,7 +34,7 @@ export type CapacitorUpdaterConfig = {
   appId: string
   channel: string
   nativeVersion?: string
-  platform?: 'ios' | 'android'
+  platform?: OtaPlatform
   deviceId: string
   autoConfirm?: boolean
   reloadOnSync?: boolean

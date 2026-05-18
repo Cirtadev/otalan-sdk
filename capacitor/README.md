@@ -7,6 +7,7 @@ This package is the full client-side orchestration layer for Otalan on Capacitor
 ## What This Package Does
 
 - checks Otalan for updates
+- requires and verifies served compatibility results before staging a bundle
 - decides whether a bundle should be applied
 - downloads bundles through `@capawesome/capacitor-live-update`
 - sets the next bundle
@@ -255,7 +256,7 @@ Config:
 - `apiKey`: OTA app key
 - `appId`: app identifier
 - `channel`: release channel
-- `nativeVersion`: optional native version override
+- `nativeVersion`: optional local version override, sent to Otalan as `runtimeVersion`
 - `platform`: optional platform override
 - `deviceId`: required stable device ID
 - `autoConfirm`: defaults to `true`
@@ -352,6 +353,9 @@ Returns `Promise<CapacitorSyncResult>`.
 
 `CapacitorCheckResult`:
 
+- `appId`: compatibility app identifier
+- `platform`: compatibility platform
+- `runtimeVersion`: compatibility runtime version
 - `updateAvailable`: whether Otalan selected an update
 - `bundleId`: selected bundle ID when an update is available
 - `downloadUrl`: selected bundle URL when an update is available. Treat this value as opaque; downloads may come from immutable CDN URLs.
@@ -372,7 +376,7 @@ Returns `Promise<CapacitorSyncResult>`.
 
 ## Network Behavior
 
-The SDK sends the OTA app key with Otalan requests. Update checks include the app identifier, platform, channel, native version, current bundle ID when available, and the stable device ID. Install confirmations include the app identifier, platform, bundle ID, stable device ID, and `transferSource`.
+The SDK sends the OTA app key with Otalan requests. Update checks include the app identifier, platform, channel, runtime version, current bundle ID when available, and the stable device ID. Successful check responses must include matching `appId`, `platform`, and `runtimeVersion`; the SDK validates those fields before trusting `updateAvailable` or using any selected bundle. Missing or mismatched compatibility metadata rejects `check()` or `sync()`; `initializeUpdater()` logs the sync failure and leaves the host app running. Install confirmations include the app identifier, platform, bundle ID, stable device ID, and `transferSource`.
 
 `transferSource` is either `downloaded` or `cached`. Treat it as advisory client-reported metadata only.
 

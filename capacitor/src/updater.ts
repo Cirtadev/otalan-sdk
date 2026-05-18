@@ -6,8 +6,10 @@ import {
   SDK_LOG_CONTEXT,
   buildHeaders,
   isNativeOtaPlatform,
+  isRecord,
   joinUrl,
   postJson,
+  readStringField,
   requireDeviceId,
   resolvePlatform,
   serializeErrorForLog,
@@ -32,10 +34,17 @@ import type {
   DeviceIdStorage,
   InitializeCapacitorUpdaterConfig,
   OtaCheckResponse,
+  OtaPlatform,
 } from './types'
 
 const DEFAULT_DEVICE_ID_STORAGE_KEY = 'otalan-device-id'
 const TRANSFER_SOURCE_STORAGE_KEY_PREFIX = 'otalan:capacitor:transfer-source:'
+
+type UpdateCheckContext = {
+  appId: string
+  platform: OtaPlatform
+  runtimeVersion: string
+}
 
 export type InitializedCapacitorUpdater = {
   getDeviceId: () => Promise<string | null>
@@ -367,19 +376,75 @@ async function confirmInstall(
 
 async function checkForUpdate(config: CapacitorUpdaterConfig, deviceId: string) {
   const currentBundle = await getCurrentBundle()
-
-  return postJson<OtaCheckResponse>(
+  const platform = resolvePlatform(config)
+  const runtimeVersion = await resolveNativeVersion(config)
+  const response = await postJson<unknown>(
     joinUrl(config.apiUrl, '/capacitor/check'),
     {
       appId: config.appId,
-      platform: resolvePlatform(config),
+      platform,
       channel: config.channel,
-      nativeVersion: await resolveNativeVersion(config),
+      runtimeVersion,
       currentBundleId: currentBundle.bundleId ?? undefined,
       deviceId,
     },
     buildHeaders(config),
   )
+
+  return normalizeCheckResponse(response, {
+    appId: config.appId,
+    platform,
+    runtimeVersion,
+  })
+}
+
+function normalizeCheckResponse(response: unknown, context: UpdateCheckContext): OtaCheckResponse {
+  if (!isRecord(response)) {
+    throw new Error('Otalan check response was malformed.')
+  }
+
+  assertCompatibleCheckField(response, context, 'appId')
+  assertCompatibleCheckField(response, context, 'platform')
+  assertCompatibleCheckField(response, context, 'runtimeVersion')
+
+  if (typeof response.updateAvailable !== 'boolean') {
+    throw new Error('Otalan check response was malformed.')
+  }
+
+  if (!response.updateAvailable) {
+    return response as Extract<OtaCheckResponse, { updateAvailable: false }>
+  }
+
+  const bundleId = readStringField(response, 'bundleId')
+  const downloadUrl = readStringField(response, 'downloadUrl')
+
+  if (!bundleId || !downloadUrl) {
+    throw new Error('Otalan check response was malformed.')
+  }
+
+  return response as Extract<OtaCheckResponse, { updateAvailable: true }>
+}
+
+function assertCompatibleCheckField<TField extends keyof UpdateCheckContext>(
+  response: Record<string, unknown>,
+  context: UpdateCheckContext,
+  field: TField,
+) {
+  const value = response[field]
+
+  if (value === undefined || value === null) {
+    throw new Error(`Otalan check response field "${field}" is required.`)
+  }
+
+  if (typeof value !== 'string') {
+    throw new Error(`Otalan check response field "${field}" was malformed.`)
+  }
+
+  if (value !== context[field]) {
+    throw new Error(
+      `Otalan check response is incompatible with the running app: ${field}=${value} does not match ${context[field]}.`,
+    )
+  }
 }
 
 function buildAppliedResult(

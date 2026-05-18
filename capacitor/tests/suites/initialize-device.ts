@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   OTALAN_CAPACITOR_SDK_NAME,
   OTALAN_CAPACITOR_SDK_VERSION,
+  buildCompatibleCheckResponse,
   capacitorState,
   createLogger,
   fetchState,
@@ -17,7 +18,7 @@ describe('@otalan/capacitor initializeUpdater device behavior', () => {
 
     fetchState.handler = async (url) => {
       if (url.endsWith('/capacitor/check')) {
-        return Response.json({ updateAvailable: false })
+        return Response.json(buildCompatibleCheckResponse())
       }
 
       return new Response(null, { status: 204 })
@@ -41,7 +42,7 @@ describe('@otalan/capacitor initializeUpdater device behavior', () => {
   test('initializeUpdater uses an explicit device id override', async () => {
     fetchState.handler = async (url) => {
       if (url.endsWith('/capacitor/check')) {
-        return Response.json({ updateAvailable: false })
+        return Response.json(buildCompatibleCheckResponse())
       }
 
       return new Response(null, { status: 204 })
@@ -68,7 +69,7 @@ describe('@otalan/capacitor initializeUpdater device behavior', () => {
 
     fetchState.handler = async (url) => {
       if (url.endsWith('/capacitor/check')) {
-        return Response.json({ updateAvailable: false })
+        return Response.json(buildCompatibleCheckResponse())
       }
 
       return new Response(null, { status: 204 })
@@ -195,7 +196,7 @@ describe('@otalan/capacitor initializeUpdater device behavior', () => {
   test('initializeUpdater logs resume listener failures and still runs launch sync', async () => {
     capacitorState.addListenerError = new Error('listener unavailable')
 
-    fetchState.handler = async () => Response.json({ updateAvailable: false })
+    fetchState.handler = async () => Response.json(buildCompatibleCheckResponse())
 
     const logger = createLogger()
 

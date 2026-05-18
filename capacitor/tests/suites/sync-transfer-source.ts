@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
+  buildCompatibleCheckResponse,
   capacitorState,
   createUpdater,
   fetchState,
@@ -8,17 +9,32 @@ import {
   readJsonBody,
 } from '../helpers/capacitor-test-harness'
 
+type CompatibleUpdateInput = {
+  bundleId: string
+  downloadUrl: string
+  mandatory?: boolean
+}
+
+function buildCompatibleUpdate(input: CompatibleUpdateInput) {
+  return {
+    updateAvailable: true,
+    appId: 'com.example.app',
+    platform: 'ios',
+    runtimeVersion: capacitorState.versionName,
+    ...input,
+  }
+}
+
 describe('@otalan/capacitor sync transfer source behavior', () => {
   test('sync returns no update when Otalan points to the current bundle', async () => {
     capacitorState.currentBundle = { bundleId: 'bundle-current' }
 
     fetchState.handler = async (url) => {
       if (url.endsWith('/capacitor/check')) {
-        return Response.json({
-          updateAvailable: true,
+        return Response.json(buildCompatibleUpdate({
           bundleId: 'bundle-current',
           downloadUrl: 'https://cdn.example.com/bundle-current.zip',
-        })
+        }))
       }
 
       return new Response(null, { status: 204 })
@@ -43,7 +59,7 @@ describe('@otalan/capacitor sync transfer source behavior', () => {
   test('sync works when destructured from the updater object', async () => {
     fetchState.handler = async (url) => {
       if (url.endsWith('/capacitor/check')) {
-        return Response.json({ updateAvailable: false })
+        return Response.json(buildCompatibleCheckResponse())
       }
 
       return new Response(null, { status: 204 })
@@ -65,12 +81,11 @@ describe('@otalan/capacitor sync transfer source behavior', () => {
 
     fetchState.handler = async (url) => {
       if (url.endsWith('/capacitor/check')) {
-        return Response.json({
-          updateAvailable: true,
+        return Response.json(buildCompatibleUpdate({
           bundleId: 'bundle-next',
           downloadUrl: 'https://cdn.example.com/bundle-next.zip',
           mandatory: true,
-        })
+        }))
       }
 
       return new Response(null, { status: 204 })
@@ -133,12 +148,11 @@ describe('@otalan/capacitor sync transfer source behavior', () => {
 
     fetchState.handler = async (url) => {
       if (url.endsWith('/capacitor/check')) {
-        return Response.json({
-          updateAvailable: true,
+        return Response.json(buildCompatibleUpdate({
           bundleId: 'bundle-next',
           downloadUrl: 'https://cdn.example.com/bundle-next.zip',
           mandatory: true,
-        })
+        }))
       }
 
       return new Response(null, { status: 204 })
@@ -196,12 +210,11 @@ describe('@otalan/capacitor sync transfer source behavior', () => {
 
     fetchState.handler = async (url) => {
       if (url.endsWith('/capacitor/check')) {
-        return Response.json({
-          updateAvailable: true,
+        return Response.json(buildCompatibleUpdate({
           bundleId: 'bundle-next',
           downloadUrl: 'https://cdn.example.com/bundle-next.zip',
           mandatory: true,
-        })
+        }))
       }
 
       return new Response(null, { status: 204 })
@@ -231,12 +244,11 @@ describe('@otalan/capacitor sync transfer source behavior', () => {
 
     fetchState.handler = async (url) => {
       if (url.endsWith('/capacitor/check')) {
-        return Response.json({
-          updateAvailable: true,
+        return Response.json(buildCompatibleUpdate({
           bundleId: 'bundle-next',
           downloadUrl: 'https://cdn.example.com/bundle-next.zip',
           mandatory: true,
-        })
+        }))
       }
 
       return new Response(null, { status: 204 })
@@ -276,12 +288,11 @@ describe('@otalan/capacitor sync transfer source behavior', () => {
 
     fetchState.handler = async (url) => {
       if (url.endsWith('/capacitor/check')) {
-        return Response.json({
-          updateAvailable: true,
+        return Response.json(buildCompatibleUpdate({
           bundleId: 'bundle-next',
           downloadUrl: 'https://cdn.example.com/bundle-next.zip',
           mandatory: false,
-        })
+        }))
       }
 
       return new Response(null, { status: 204 })
@@ -318,12 +329,11 @@ describe('@otalan/capacitor sync transfer source behavior', () => {
 
     fetchState.handler = async (url) => {
       if (url.endsWith('/capacitor/check')) {
-        return Response.json({
-          updateAvailable: true,
+        return Response.json(buildCompatibleUpdate({
           bundleId: 'bundle-next',
           downloadUrl: 'https://cdn.example.com/bundle-next.zip',
           mandatory: false,
-        })
+        }))
       }
 
       return new Response(null, { status: 204 })

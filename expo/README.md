@@ -81,6 +81,8 @@ Example `app.json` or `app.config.json`:
 
 Your configured update service is still responsible for manifest responses and asset URLs. Manifests can include direct immutable CDN asset URLs.
 
+`expo-updates` and the configured Otalan manifest endpoint own update selection and runtime compatibility. This helper observes the already launched update metadata and confirms it; it does not fetch, stage, or independently verify Expo manifest compatibility.
+
 Use `checkAutomatically` with an active update policy such as `ON_LOAD` or `WIFI_ONLY` when your rollout selection does not depend on runtime headers. For staged rollouts that need a runtime `x-device-id`, use manual checks so JS can set the real header first.
 
 Otalan protects Expo update checks with the OTA app key. Include `x-api-key` or `authorization` on update checks so the manifest endpoint can authenticate the request and apply rollout and quota rules.
