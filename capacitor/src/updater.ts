@@ -377,14 +377,14 @@ async function confirmInstall(
 async function checkForUpdate(config: CapacitorUpdaterConfig, deviceId: string) {
   const currentBundle = await getCurrentBundle()
   const platform = resolvePlatform(config)
-  const runtimeVersion = await resolveNativeVersion(config)
+  const nativeVersion = await resolveNativeVersion(config)
   const response = await postJson<unknown>(
     joinUrl(config.apiUrl, '/capacitor/check'),
     {
       appId: config.appId,
       platform,
       channel: config.channel,
-      runtimeVersion,
+      nativeVersion,
       currentBundleId: currentBundle.bundleId ?? undefined,
       deviceId,
     },
@@ -394,7 +394,7 @@ async function checkForUpdate(config: CapacitorUpdaterConfig, deviceId: string) 
   return normalizeCheckResponse(response, {
     appId: config.appId,
     platform,
-    runtimeVersion,
+    runtimeVersion: nativeVersion,
   })
 }
 

@@ -203,11 +203,9 @@ async function readErrorResponseMessage(response: Response) {
   const contentType = response.headers.get('content-type') ?? ''
 
   if (contentType.includes('application/json')) {
-    const payload = await response.json().catch(() => ({})) as {
-      message?: string
-    }
+    const payload = await response.json().catch(() => ({}))
 
-    return payload.message
+    return readErrorPayloadMessage(payload)
   }
 
   const body = await response.text().catch(() => '')
@@ -237,7 +235,7 @@ function parseNativeJsonResponse<T>(response: HttpResponse) {
 
 function readNativeErrorResponseMessage(response: HttpResponse) {
   if (isRecord(response.data)) {
-    return readStringField(response.data, 'message')
+    return readErrorPayloadMessage(response.data)
   }
 
   if (typeof response.data !== 'string') {
@@ -245,11 +243,34 @@ function readNativeErrorResponseMessage(response: HttpResponse) {
   }
 
   const payload = parseStringJson(response.data)
-  if (isRecord(payload)) {
-    return readStringField(payload, 'message')
+  const payloadMessage = readErrorPayloadMessage(payload)
+  if (payloadMessage) {
+    return payloadMessage
   }
 
   return response.data.trim() || undefined
+}
+
+function readErrorPayloadMessage(payload: unknown) {
+  if (!isRecord(payload)) {
+    return undefined
+  }
+
+  const message = readStringField(payload, 'message')
+  if (message) {
+    return message
+  }
+
+  const error = payload.error
+  if (typeof error === 'string' && error) {
+    return error
+  }
+
+  if (isRecord(error)) {
+    return readStringField(error, 'message')
+  }
+
+  return undefined
 }
 
 function parseStringJson(value: string) {

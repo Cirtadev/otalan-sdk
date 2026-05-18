@@ -83,7 +83,7 @@ describe('@otalan/capacitor metadata and checks', () => {
       appId: 'com.example.app',
       platform: 'android',
       channel: 'beta',
-      runtimeVersion: '2.1.0',
+      nativeVersion: '2.1.0',
       currentBundleId: 'bundle-current',
       deviceId: 'device-1',
     })
@@ -248,6 +248,26 @@ describe('@otalan/capacitor metadata and checks', () => {
 
     await expect(updater.check()).rejects.toThrow(
       'POST https://api.otalan.com/capacitor/check failed with status 401: invalid OTA key',
+    )
+  })
+
+  test('check surfaces nested API error messages from native HTTP responses', async () => {
+    fetchState.handler = async () => Response.json({
+      error: {
+        message: 'runtimeVersion is required',
+      },
+    }, { status: 400 })
+
+    const updater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      deviceId: 'device-1',
+    })
+
+    await expect(updater.check()).rejects.toThrow(
+      'POST https://api.otalan.com/capacitor/check failed with status 400: runtimeVersion is required',
     )
   })
 })

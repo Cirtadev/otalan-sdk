@@ -38,7 +38,7 @@ Otalan serves OTA traffic only for apps that are active in Otalan. If update tra
 
 ## Update Compatibility
 
-Capacitor update checks include the running app identifier, platform, channel, runtime version, current bundle ID when available, and stable device ID. Successful `/capacitor/check` responses must include matching `appId`, `platform`, and `runtimeVersion`; `@otalan/capacitor` validates those values before trusting `updateAvailable` or using any selected bundle.
+Capacitor update checks include `appId`, `platform`, `channel`, `nativeVersion`, `currentBundleId` when available, and stable `deviceId`. Successful `/capacitor/check` responses must include matching `appId`, `platform`, and `runtimeVersion`; `@otalan/capacitor` validates those values before trusting `updateAvailable` or using any selected bundle.
 
 Expo update selection is handled by `expo-updates` and the Otalan manifest endpoint. `@otalan/expo` observes and confirms the launched update; it does not fetch or stage Expo updates itself.
 

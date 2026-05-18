@@ -1,10 +1,20 @@
 # Changelog
 
+## 1.2.1 - 2026-05-18
+
+### Fixed
+
+- Restored `/capacitor/check` request compatibility by sending `nativeVersion` while still validating the response `runtimeVersion` against the running app.
+- Improved native HTTP error messages for nested API error payloads.
+
+### Tests
+
+- Added regression coverage for the Capacitor check request compatibility context and nested API error messages.
+
 ## 1.2.0 - 2026-05-18
 
 ### Breaking
 
-- Changed Capacitor update checks to send `runtimeVersion` instead of `nativeVersion` to `/capacitor/check`.
 - Required successful `/capacitor/check` responses to include matching `appId`, `platform`, and `runtimeVersion` before the SDK trusts `updateAvailable` or uses any selected bundle.
 
 ### Added
