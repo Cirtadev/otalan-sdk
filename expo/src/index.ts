@@ -20,6 +20,7 @@ export type ExpoUpdaterConfig = {
   apiUrl: string
   apiKey: string
   appId: string
+  channel: string
   autoConfirm?: boolean
   deviceId: string
   headers?: HeadersInit
@@ -243,6 +244,7 @@ export async function initializeUpdater(
       && isNativeOtaPlatform(Platform.OS)
       && Boolean(config.apiUrl)
       && Boolean(config.apiKey)
+      && Boolean(config.channel)
     )
   }
 
@@ -259,6 +261,7 @@ export async function initializeUpdater(
         apiUrl: config.apiUrl,
         apiKey: config.apiKey,
         appId: config.appId,
+        channel: config.channel,
         autoConfirm: config.autoConfirm,
         deviceId,
         headers: config.headers,
@@ -377,6 +380,7 @@ export function createUpdater(config: ExpoUpdaterConfig) {
         {
           appId: config.appId,
           platform: resolvePlatform(),
+          channel: config.channel,
           updateId,
           runtimeVersion: current.runtimeVersion,
           deviceId,

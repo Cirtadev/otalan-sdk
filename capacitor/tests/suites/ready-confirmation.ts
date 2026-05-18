@@ -32,6 +32,8 @@ describe('@otalan/capacitor ready confirmation behavior', () => {
     expect(readJsonBody(fetchState.calls[0]!)).toEqual({
       appId: 'com.example.app',
       platform: 'ios',
+      channel: 'production',
+      runtimeVersion: '1.0.0',
       bundleId: 'bundle-1',
       deviceId: 'device-1',
       transferSource: 'downloaded',
@@ -125,6 +127,8 @@ describe('@otalan/capacitor ready confirmation behavior', () => {
 
     expect(fetchState.calls).toHaveLength(2)
     expect(readJsonBody(fetchState.calls[1]!)).toMatchObject({
+      channel: 'production',
+      runtimeVersion: '1.0.0',
       transferSource: 'downloaded',
     })
     expect(logger.warnCalls).toHaveLength(1)
@@ -157,6 +161,8 @@ describe('@otalan/capacitor ready confirmation behavior', () => {
     await updater.ready()
 
     expect(readJsonBody(fetchState.calls[0]!)).toMatchObject({
+      channel: 'production',
+      runtimeVersion: '1.0.0',
       transferSource: 'downloaded',
     })
   })

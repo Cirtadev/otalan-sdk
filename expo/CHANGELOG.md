@@ -1,10 +1,15 @@
 # Changelog
 
-## Unreleased
+## 1.2.0 - 2026-05-18
+
+### Breaking
+
+- `channel` is now required in Expo updater config. Existing callers must pass the release channel used by the Expo update URL.
 
 ### Changed
 
 - Documented that Expo update selection and runtime compatibility are owned by `expo-updates` and the Otalan manifest endpoint.
+- Include `channel` on Expo install confirmations.
 
 ## 1.1.5 - 2026-05-15
 

@@ -136,6 +136,8 @@ describe('@otalan/capacitor sync transfer source behavior', () => {
     expect(readJsonBody(fetchState.calls[1]!)).toEqual({
       appId: 'com.example.app',
       platform: 'ios',
+      channel: 'production',
+      runtimeVersion: '1.0.0',
       bundleId: 'bundle-next',
       deviceId: 'device-1',
       transferSource: 'downloaded',
@@ -197,6 +199,8 @@ describe('@otalan/capacitor sync transfer source behavior', () => {
     expect(readJsonBody(fetchState.calls[1]!)).toEqual({
       appId: 'com.example.app',
       platform: 'ios',
+      channel: 'production',
+      runtimeVersion: '1.0.0',
       bundleId: 'bundle-next',
       deviceId: 'device-1',
       transferSource: 'cached',

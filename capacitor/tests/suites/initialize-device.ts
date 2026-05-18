@@ -61,6 +61,21 @@ describe('@otalan/capacitor initializeUpdater device behavior', () => {
     expect(readJsonBody(fetchState.calls[0]!).deviceId).toBe('device-override')
   })
 
+  test('initializeUpdater no-ops when required channel is empty', async () => {
+    const updater = await initializeUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      channel: '',
+      deviceId: 'device-override',
+      onResume: false,
+    })
+
+    expect(await updater.getDeviceId()).toBe('device-override')
+    expect(await updater.getUpdater()).toBeNull()
+    expect(await updater.sync()).toBeNull()
+    expect(fetchState.calls).toHaveLength(0)
+  })
+
   test('initializeUpdater reads device id from custom storage', async () => {
     const storageCalls = {
       getItem: [] as string[],

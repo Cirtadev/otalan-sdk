@@ -226,7 +226,7 @@ await updater.sync()
 When `enabled` is omitted, `initializeUpdater()`:
 
 - no-ops outside native iOS and Android
-- no-ops when `apiUrl` or `apiKey` are missing
+- no-ops when `apiUrl`, `apiKey`, or `channel` are missing
 - resolves `appId` from `App.getInfo()` unless you provide one
 - creates and persists a stable `deviceId` unless you provide one
 - exposes the resolved `deviceId` through `getDeviceId()`
@@ -238,7 +238,7 @@ When `enabled` is omitted, `initializeUpdater()`:
 - swallows sync failures and logs warnings instead
 - keeps install confirmation best-effort during sync so a slow confirmation request cannot block the next update check
 
-Pass `enabled: false` to force a no-op. Pass `enabled: true` only when your app has its own runtime/config gate, because it bypasses the default native-platform and credential checks. With `enabled: true`, missing or invalid `apiUrl` and `apiKey` values can produce startup sync warnings instead of the helper silently no-oping.
+Pass `enabled: false` to force a no-op. Pass `enabled: true` only when your app has its own runtime/config gate, because it bypasses the default native-platform and required config checks. With `enabled: true`, missing or invalid `apiUrl`, `apiKey`, or `channel` values can produce startup sync warnings instead of the helper silently no-oping.
 
 On a fresh native install, `LiveUpdate.getCurrentBundle()` and `LiveUpdate.getNextBundle()` can both return `null` bundle IDs. That is normal before the device has activated or staged an OTA bundle.
 
@@ -279,7 +279,7 @@ Config:
 - `deviceId`: optional explicit stable device ID override
 - `deviceIdStorage`: optional async storage adapter with `getItem()` and `setItem()`
 - `deviceIdStorageKey`: optional storage key, defaults to `otalan-device-id`
-- `enabled`: optional explicit gate. Omit for default native-platform and credential checks, pass `false` to force-disable, or pass `true` to force initialization and bypass those default checks.
+- `enabled`: optional explicit gate. Omit for default native-platform and required config checks, pass `false` to force-disable, or pass `true` to force initialization and bypass those default checks.
 - `onResume`: defaults to `true`
 - `logger`: optional warning and info logger
 
@@ -376,7 +376,7 @@ Returns `Promise<CapacitorSyncResult>`.
 
 ## Network Behavior
 
-The SDK sends the OTA app key with Otalan requests. Update checks include `appId`, `platform`, `channel`, `runtimeVersion`, `currentBundleId` when available, and the stable `deviceId`. Successful check responses must include matching `appId`, `platform`, and `runtimeVersion`; the SDK validates those fields before trusting `updateAvailable` or using any selected bundle. Missing or mismatched compatibility metadata rejects `check()` or `sync()`; `initializeUpdater()` logs the sync failure and leaves the host app running. Install confirmations include the app identifier, platform, bundle ID, stable device ID, and `transferSource`.
+The SDK sends the OTA app key with Otalan requests. Update checks include `appId`, `platform`, `channel`, `runtimeVersion`, `currentBundleId` when available, and the stable `deviceId`. Successful check responses must include matching `appId`, `platform`, and `runtimeVersion`; the SDK validates those fields before trusting `updateAvailable` or using any selected bundle. Missing or mismatched compatibility metadata rejects `check()` or `sync()`; `initializeUpdater()` logs the sync failure and leaves the host app running. Install confirmations include the app identifier, platform, channel, runtime version, bundle ID, stable device ID, and `transferSource`.
 
 `transferSource` is either `downloaded` or `cached`. Treat it as advisory client-reported metadata only.
 

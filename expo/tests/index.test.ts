@@ -187,6 +187,7 @@ describe('@otalan/expo', () => {
       apiUrl: 'https://api.otalan.com',
       apiKey: 'otalan_ota_xxx',
       appId: 'com.example.app',
+      channel: 'production',
       deviceId: 'device-1',
       headers: [
         ['x-api-key', 'should-not-override-configured-key'],
@@ -202,6 +203,7 @@ describe('@otalan/expo', () => {
     expect(readJsonBody(fetchState.calls[0]!)).toEqual({
       appId: 'com.example.app',
       platform: 'ios',
+      channel: 'production',
       updateId: 'update-1',
       runtimeVersion: '1.0.0',
       deviceId: 'device-1',
@@ -217,6 +219,7 @@ describe('@otalan/expo', () => {
       apiUrl: 'https://api.otalan.com',
       apiKey: 'otalan_ota_xxx',
       appId: 'com.example.app',
+      channel: 'production',
       deviceId: 'device-1',
     })
 
@@ -235,6 +238,7 @@ describe('@otalan/expo', () => {
       apiUrl: 'https://api.otalan.com',
       apiKey: 'otalan_ota_xxx',
       appId: 'com.example.app',
+      channel: 'production',
       deviceId: 'device-1',
     })
 
@@ -257,6 +261,7 @@ describe('@otalan/expo', () => {
       apiUrl: 'https://api.otalan.com',
       apiKey: 'otalan_ota_xxx',
       appId: 'com.example.app',
+      channel: 'production',
       deviceId: 'device-1',
       logger: logger.logger,
     })
@@ -280,6 +285,7 @@ describe('@otalan/expo', () => {
       apiUrl: 'https://api.otalan.com',
       apiKey: 'otalan_ota_xxx',
       appId: 'com.example.app',
+      channel: 'production',
       deviceId: 'device-1',
     })
     const { confirmCurrentUpdate, ready } = updater
@@ -300,6 +306,7 @@ describe('@otalan/expo', () => {
       apiUrl: 'https://api.otalan.com',
       apiKey: 'otalan_ota_xxx',
       appId: 'com.example.app',
+      channel: 'production',
       deviceId: 'device-1',
     })
 
@@ -322,6 +329,7 @@ describe('@otalan/expo', () => {
       apiUrl: 'https://api.otalan.com',
       apiKey: 'otalan_ota_xxx',
       appId: 'com.example.app',
+      channel: 'production',
       deviceId: 'device-1',
     })
 
@@ -347,6 +355,7 @@ describe('@otalan/expo', () => {
       apiUrl: 'https://api.otalan.com',
       apiKey: 'otalan_ota_xxx',
       appId: 'com.example.app',
+      channel: 'production',
       deviceId: 'device-1',
     })
 
@@ -389,6 +398,7 @@ describe('@otalan/expo', () => {
       apiUrl: 'https://api.otalan.com',
       apiKey: 'otalan_ota_xxx',
       appId: 'com.example.app',
+      channel: 'production',
     })
 
     expect(asyncStorageState.getItemCalls).toEqual(['otalan-device-id'])
@@ -416,6 +426,7 @@ describe('@otalan/expo', () => {
       apiUrl: 'https://api.otalan.com',
       apiKey: 'otalan_ota_xxx',
       appId: 'com.example.app',
+      channel: 'production',
       deviceIdStorage: {
         getItem: async (key) => {
           storageCalls.getItem.push(key)
@@ -435,13 +446,14 @@ describe('@otalan/expo', () => {
     expect(fetchState.calls).toHaveLength(1)
   })
 
-  test('initializeUpdater no-ops when required credentials are empty', async () => {
+  test('initializeUpdater no-ops when required config is empty', async () => {
     const { initializeUpdater } = await loadSdk()
 
     const updater = await initializeUpdater({
       apiUrl: '',
       apiKey: 'otalan_ota_xxx',
       appId: 'com.example.app',
+      channel: 'production',
     })
 
     expect(updater.getUpdater()).toBeNull()
@@ -449,6 +461,23 @@ describe('@otalan/expo', () => {
     expect(await updater.ready()).toBeNull()
     expect(asyncStorageState.getItemCalls).toHaveLength(0)
     expect(asyncStorageState.setItemCalls).toHaveLength(0)
+    expect(fetchState.calls).toHaveLength(0)
+  })
+
+  test('initializeUpdater no-ops when required channel is empty', async () => {
+    const { initializeUpdater } = await loadSdk()
+
+    const updater = await initializeUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: '',
+    })
+
+    expect(updater.getUpdater()).toBeNull()
+    expect(await updater.getDeviceId()).toBeNull()
+    expect(await updater.ready()).toBeNull()
+    expect(asyncStorageState.getItemCalls).toHaveLength(0)
     expect(fetchState.calls).toHaveLength(0)
   })
 
@@ -466,6 +495,7 @@ describe('@otalan/expo', () => {
       apiUrl: 'https://api.otalan.com',
       apiKey: 'otalan_ota_xxx',
       appId: 'com.example.app',
+      channel: 'production',
       logger: logger.logger,
     })
 

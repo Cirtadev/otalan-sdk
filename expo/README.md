@@ -24,6 +24,7 @@ This package is intentionally small. It does not replace `expo-updates`. Update 
 - an Expo app using `expo-updates`
 - a working Otalan `expo-updates` endpoint
 - an Otalan OTA app key
+- the release channel used by your Expo update URL
 
 ## Supported Versions
 
@@ -120,6 +121,7 @@ const otalan = await initializeUpdater({
   apiUrl: 'https://api.otalan.com',
   apiKey: 'otalan_ota_xxx',
   appId: 'com.example.app',
+  channel: 'production',
 })
 
 const deviceId = await otalan.getDeviceId()
@@ -139,6 +141,7 @@ function getOtalanUpdater() {
     apiUrl: process.env.EXPO_PUBLIC_OTALAN_API_URL ?? 'https://api.otalan.com',
     apiKey: process.env.EXPO_PUBLIC_OTALAN_API_KEY ?? '',
     appId: process.env.EXPO_PUBLIC_OTALAN_APP_ID ?? 'com.example.app',
+    channel: process.env.EXPO_PUBLIC_OTALAN_CHANNEL ?? 'production',
   })
 
   return otalanPromise
@@ -213,6 +216,7 @@ await initializeUpdater({
   apiUrl: 'https://api.otalan.com',
   apiKey: 'otalan_ota_xxx',
   appId: 'com.example.app',
+  channel: 'production',
   deviceIdStorage: {
     getItem: (key) => SecureStore.getItemAsync(key),
     setItem: (key, value) => SecureStore.setItemAsync(key, value),
@@ -276,11 +280,11 @@ When `enabled` is omitted, `initializeUpdater()`:
 - exposes the resolved `deviceId` through `getDeviceId()`
 - no-ops outside native iOS and Android
 - no-ops when `expo-updates` is disabled
-- no-ops when `apiUrl` or `apiKey` are missing
+- no-ops when `apiUrl`, `apiKey`, or `channel` are missing
 - logs device ID storage failures and returns a no-op updater
 - swallows confirmation failures and logs warnings instead
 
-Pass `enabled: false` to force a no-op. Pass `enabled: true` only when your app has its own runtime/config gate, because it bypasses the default platform, `expo-updates`, and credential checks. With `enabled: true`, missing or invalid `apiUrl` and `apiKey` values can produce startup confirmation warnings instead of the helper silently no-oping.
+Pass `enabled: false` to force a no-op. Pass `enabled: true` only when your app has its own runtime/config gate, because it bypasses the default platform, `expo-updates`, and required config checks. With `enabled: true`, missing or invalid `apiUrl`, `apiKey`, or `channel` values can produce startup confirmation warnings instead of the helper silently no-oping.
 
 If startup logs `Otalan install confirmation failed.`, the failure happened during the confirmation request. The SDK logs a serializable `{ sdkName, sdkVersion, name, message }` error payload so native consoles can show the installed SDK version, HTTP status, API message, or fetch failure instead of an empty `{}`.
 
@@ -293,6 +297,7 @@ Config:
 - `apiUrl`: Otalan API base URL
 - `apiKey`: public OTA app key
 - `appId`: app identifier
+- `channel`: release channel
 - `autoConfirm`: defaults to `true`
 - `deviceId`: required stable device ID
 - `headers`: optional extra request headers
@@ -312,7 +317,7 @@ Config:
 - `deviceId`: optional explicit stable device ID override
 - `deviceIdStorage`: optional async storage adapter with `getItem()` and `setItem()`
 - `deviceIdStorageKey`: optional storage key, defaults to `otalan-device-id`
-- `enabled`: optional explicit gate. Omit for default platform, `expo-updates`, and credential checks, pass `false` to force-disable, or pass `true` to force initialization and bypass those default checks.
+- `enabled`: optional explicit gate. Omit for default platform, `expo-updates`, and required config checks, pass `false` to force-disable, or pass `true` to force initialization and bypass those default checks.
 - `logger`: optional warning logger
 
 Returns:
@@ -388,7 +393,7 @@ Returns `Promise<ExpoReadyResult>`. If confirmation fails, it logs a warning and
 
 ## Network Behavior
 
-The SDK sends the OTA app key in `x-api-key` on confirmation requests. Confirmations include the app identifier, platform, update ID, runtime version, stable device ID, and `transferSource`.
+The SDK sends the OTA app key in `x-api-key` on confirmation requests. Confirmations include the app identifier, platform, channel, update ID, runtime version, stable device ID, and `transferSource`.
 
 `transferSource` is either `downloaded` or `cached` across Otalan mobile SDKs. This package always sends `downloaded` because it does not control update fetching and cannot confidently detect cached Expo launches. Treat this field as advisory client-reported metadata only.
 

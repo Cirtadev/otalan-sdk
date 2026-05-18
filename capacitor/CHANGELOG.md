@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.0 - 2026-05-18
+
+### Changed
+
+- Include `channel` and `runtimeVersion` on Capacitor install confirmations.
+- Treat missing `channel` like other missing required startup config when `initializeUpdater()` auto-detects enablement.
+
 ## 1.3.0 - 2026-05-18
 
 ### Breaking

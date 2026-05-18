@@ -40,11 +40,11 @@ Otalan serves OTA traffic only for apps that are active in Otalan. If update tra
 
 Capacitor update checks include `appId`, `platform`, `channel`, `runtimeVersion`, `currentBundleId` when available, and stable `deviceId`. Successful `/capacitor/check` responses must include matching `appId`, `platform`, and `runtimeVersion`; `@otalan/capacitor` validates those values before trusting `updateAvailable` or using any selected bundle.
 
-Expo update selection is handled by `expo-updates` and the Otalan manifest endpoint. `@otalan/expo` observes and confirms the launched update; it does not fetch or stage Expo updates itself.
+Expo update selection is handled by `expo-updates` and the Otalan manifest endpoint. `@otalan/expo` observes and confirms the launched update with its app, platform, channel, runtime version, update ID, and device ID context; it does not fetch or stage Expo updates itself.
 
 ## Startup Enablement
 
-When `enabled` is omitted, both startup helpers auto-enable only when their runtime and required credentials are available. Pass `enabled: false` to force a no-op. Pass `enabled: true` only when your app has its own gate, because it bypasses the helper's default platform and credential checks and can surface missing or invalid config as startup request failures.
+When `enabled` is omitted, both startup helpers auto-enable only when their runtime and required config are available. Pass `enabled: false` to force a no-op. Pass `enabled: true` only when your app has its own gate, because it bypasses the helper's default platform and config checks and can surface missing or invalid config as startup request failures.
 
 ## Device IDs
 
@@ -77,6 +77,7 @@ For Expo apps:
 EXPO_PUBLIC_OTALAN_API_URL=https://api.otalan.com
 EXPO_PUBLIC_OTALAN_API_KEY=otalan_ota_xxx
 EXPO_PUBLIC_OTALAN_APP_ID=com.example.app
+EXPO_PUBLIC_OTALAN_CHANNEL=production
 ```
 
 For Capacitor apps using Vite:
@@ -97,6 +98,7 @@ const otalan = await initializeUpdater({
   apiUrl: 'https://api.otalan.com',
   apiKey: 'otalan_ota_xxx',
   appId: 'com.example.app',
+  channel: 'production',
 })
 
 const deviceId = await otalan.getDeviceId()

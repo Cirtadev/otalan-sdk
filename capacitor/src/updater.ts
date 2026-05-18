@@ -70,6 +70,7 @@ export async function initializeUpdater(
       Capacitor.isNativePlatform()
       && Boolean(config.apiUrl)
       && Boolean(config.apiKey)
+      && Boolean(config.channel)
     )
   }
 
@@ -359,11 +360,16 @@ async function confirmInstall(
     return false
   }
 
+  const platform = resolvePlatform(config)
+  const runtimeVersion = await resolveRuntimeVersion(config)
+
   await postJson(
     joinUrl(config.apiUrl, '/capacitor/confirm'),
     {
       appId: config.appId,
-      platform: resolvePlatform(config),
+      platform,
+      channel: config.channel,
+      runtimeVersion,
       bundleId: input.bundleId,
       deviceId: input.deviceId,
       transferSource: input.transferSource,

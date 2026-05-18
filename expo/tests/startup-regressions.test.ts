@@ -148,6 +148,7 @@ describe('@otalan/expo startup regressions', () => {
       apiUrl: 'https://api.otalan.com',
       apiKey: 'otalan_ota_xxx',
       appId: 'com.example.app',
+      channel: 'production',
       deviceId: 'explicit-device',
     })
 
@@ -155,6 +156,7 @@ describe('@otalan/expo startup regressions', () => {
     expect(asyncStorageState.setItemCalls).toHaveLength(0)
     expect(fetchState.calls).toHaveLength(1)
     expect(readJsonBody(fetchState.calls[0]!)).toMatchObject({
+      channel: 'production',
       deviceId: 'explicit-device',
       transferSource: 'downloaded',
     })
@@ -174,6 +176,7 @@ describe('@otalan/expo startup regressions', () => {
       apiUrl: 'https://api.otalan.com',
       apiKey: 'otalan_ota_xxx',
       appId: 'com.example.app',
+      channel: 'production',
       logger: logger.logger,
     })
 
@@ -210,6 +213,7 @@ describe('@otalan/expo startup regressions', () => {
       apiUrl: 'https://api.otalan.com',
       apiKey: 'otalan_ota_xxx',
       appId: 'com.example.app',
+      channel: 'production',
       deviceId: 'device-1',
     })
 
