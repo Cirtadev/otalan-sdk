@@ -21,7 +21,7 @@ import {
   hasDownloadedBundleSafely,
   readyLiveUpdate,
   reloadBundle,
-  resolveNativeVersion,
+  resolveRuntimeVersion,
   setNextBundle,
 } from './live-update'
 import type { LiveUpdateReadyResult } from './live-update'
@@ -196,7 +196,7 @@ export async function initializeUpdater(
       apiKey: config.apiKey,
       appId,
       channel: config.channel,
-      nativeVersion: config.nativeVersion,
+      runtimeVersion: config.runtimeVersion,
       platform,
       deviceId,
       autoConfirm: config.autoConfirm,
@@ -377,14 +377,14 @@ async function confirmInstall(
 async function checkForUpdate(config: CapacitorUpdaterConfig, deviceId: string) {
   const currentBundle = await getCurrentBundle()
   const platform = resolvePlatform(config)
-  const nativeVersion = await resolveNativeVersion(config)
+  const runtimeVersion = await resolveRuntimeVersion(config)
   const response = await postJson<unknown>(
     joinUrl(config.apiUrl, '/capacitor/check'),
     {
       appId: config.appId,
       platform,
       channel: config.channel,
-      nativeVersion,
+      runtimeVersion,
       currentBundleId: currentBundle.bundleId ?? undefined,
       deviceId,
     },
@@ -394,7 +394,7 @@ async function checkForUpdate(config: CapacitorUpdaterConfig, deviceId: string) 
   return normalizeCheckResponse(response, {
     appId: config.appId,
     platform,
-    runtimeVersion: nativeVersion,
+    runtimeVersion,
   })
 }
 

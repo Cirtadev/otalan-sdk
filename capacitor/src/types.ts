@@ -33,7 +33,7 @@ export type CapacitorUpdaterConfig = {
   apiKey: string
   appId: string
   channel: string
-  nativeVersion?: string
+  runtimeVersion?: string
   platform?: OtaPlatform
   deviceId: string
   autoConfirm?: boolean

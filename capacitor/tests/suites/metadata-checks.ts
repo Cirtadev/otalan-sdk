@@ -83,7 +83,7 @@ describe('@otalan/capacitor metadata and checks', () => {
       appId: 'com.example.app',
       platform: 'android',
       channel: 'beta',
-      nativeVersion: '2.1.0',
+      runtimeVersion: '2.1.0',
       currentBundleId: 'bundle-current',
       deviceId: 'device-1',
     })
@@ -193,7 +193,7 @@ describe('@otalan/capacitor metadata and checks', () => {
       apiKey: 'otalan_ota_xxx',
       appId: 'com.example.app',
       channel: 'production',
-      nativeVersion: '1.0.0',
+      runtimeVersion: '1.0.0',
       platform: 'ios',
       deviceId: 'device-1',
     })

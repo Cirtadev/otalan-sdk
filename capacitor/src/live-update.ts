@@ -56,9 +56,9 @@ export async function reloadBundle(bundleId: string) {
   })
 }
 
-export async function resolveNativeVersion(config: CapacitorUpdaterConfig) {
-  if (config.nativeVersion) {
-    return config.nativeVersion
+export async function resolveRuntimeVersion(config: CapacitorUpdaterConfig) {
+  if (config.runtimeVersion) {
+    return config.runtimeVersion
   }
 
   const result = await LiveUpdate.getVersionName().catch((error) => {

@@ -256,7 +256,7 @@ Config:
 - `apiKey`: OTA app key
 - `appId`: app identifier
 - `channel`: release channel
-- `nativeVersion`: optional local version override, sent to Otalan as `nativeVersion`
+- `runtimeVersion`: optional local runtime version override, sent to Otalan as `runtimeVersion`
 - `platform`: optional platform override
 - `deviceId`: required stable device ID
 - `autoConfirm`: defaults to `true`
@@ -376,7 +376,7 @@ Returns `Promise<CapacitorSyncResult>`.
 
 ## Network Behavior
 
-The SDK sends the OTA app key with Otalan requests. Update checks include `appId`, `platform`, `channel`, `nativeVersion`, `currentBundleId` when available, and the stable `deviceId`. Successful check responses must include matching `appId`, `platform`, and `runtimeVersion`; the SDK validates those fields before trusting `updateAvailable` or using any selected bundle. Missing or mismatched compatibility metadata rejects `check()` or `sync()`; `initializeUpdater()` logs the sync failure and leaves the host app running. Install confirmations include the app identifier, platform, bundle ID, stable device ID, and `transferSource`.
+The SDK sends the OTA app key with Otalan requests. Update checks include `appId`, `platform`, `channel`, `runtimeVersion`, `currentBundleId` when available, and the stable `deviceId`. Successful check responses must include matching `appId`, `platform`, and `runtimeVersion`; the SDK validates those fields before trusting `updateAvailable` or using any selected bundle. Missing or mismatched compatibility metadata rejects `check()` or `sync()`; `initializeUpdater()` logs the sync failure and leaves the host app running. Install confirmations include the app identifier, platform, bundle ID, stable device ID, and `transferSource`.
 
 `transferSource` is either `downloaded` or `cached`. Treat it as advisory client-reported metadata only.
 

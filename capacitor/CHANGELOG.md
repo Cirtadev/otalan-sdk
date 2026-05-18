@@ -1,10 +1,21 @@
 # Changelog
 
+## 1.3.0 - 2026-05-18
+
+### Breaking
+
+- Standardized Capacitor compatibility metadata on `runtimeVersion` for `/capacitor/check` requests, successful check responses, and local SDK validation.
+- Renamed the Capacitor config override to `runtimeVersion`; the SDK still derives the default value from `LiveUpdate.getVersionName()`.
+
+### Tests
+
+- Updated Capacitor compatibility regression coverage to assert `runtimeVersion` in both request and response metadata.
+
 ## 1.2.1 - 2026-05-18
 
 ### Fixed
 
-- Restored `/capacitor/check` request compatibility by sending `nativeVersion` while still validating the response `runtimeVersion` against the running app.
+- Restored `/capacitor/check` request compatibility after the 1.2.0 request field regression.
 - Improved native HTTP error messages for nested API error payloads.
 
 ### Tests
@@ -23,7 +34,7 @@
 
 ### Tests
 
-- Added regression coverage for Capacitor update check compatibility context, missing compatibility metadata, and mismatched native version responses.
+- Added regression coverage for Capacitor update check compatibility context, missing compatibility metadata, and mismatched runtime version responses.
 
 ## 1.1.5 - 2026-05-15
 
