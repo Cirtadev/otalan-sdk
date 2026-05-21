@@ -9,7 +9,7 @@ This package is intentionally small. It does not replace `expo-updates`. Update 
 - exposes `initializeUpdater()` for app startup
 - reads the currently running Expo update metadata
 - confirms eligible launched OTA updates with advisory transfer source metadata
-- sends the OTA app key through the `x-api-key` header on that confirm request
+- sends the OTA App Key through the `x-api-key` header on that confirm request
 
 ## What This Package Does Not Do
 
@@ -23,7 +23,7 @@ This package is intentionally small. It does not replace `expo-updates`. Update 
 
 - an Expo app using `expo-updates`
 - a working Otalan `expo-updates` endpoint
-- an Otalan OTA app key
+- an Otalan OTA App Key
 - the release channel used by your Expo update URL
 
 ## Supported Versions
@@ -86,7 +86,9 @@ Your configured update service is still responsible for manifest responses and a
 
 Use `checkAutomatically` with an active update policy such as `ON_LOAD` or `WIFI_ONLY` when your rollout selection does not depend on runtime headers. For staged rollouts that need a runtime `x-device-id`, use manual checks so JS can set the real header first.
 
-Otalan protects Expo update checks with the OTA app key. Include `x-api-key` or `authorization` on update checks so the manifest endpoint can authenticate the request and apply rollout and quota rules.
+Otalan protects Expo update checks with the OTA App Key. Include `x-api-key` or `authorization` on update checks so the manifest endpoint can authenticate the request and apply rollout and quota rules.
+
+The OTA App Key can be embedded in mobile JS/TS bundles for update checks and install confirmations, but it is not a public identifier. Do not publish it in docs, issue trackers, logs, source control, or backend examples, and do not use OTA Publish Keys in app code.
 
 Partial rollouts for Expo require a stable `x-device-id` header on update checks. Static config alone is not enough for that. If you need Expo staged rollouts, either pass your own stable `deviceId` to `initializeUpdater()` or read the SDK-managed value with `getDeviceId()`, then wire that same value into your `expo-updates` request headers before calling `Updates.checkForUpdateAsync()`.
 
@@ -295,7 +297,7 @@ If startup logs `Otalan install confirmation failed.`, the failure happened duri
 Config:
 
 - `apiUrl`: Otalan API base URL
-- `apiKey`: public OTA app key
+- `apiKey`: OTA App Key
 - `appId`: app identifier
 - `channel`: release channel
 - `autoConfirm`: defaults to `true`
@@ -393,11 +395,11 @@ Returns `Promise<ExpoReadyResult>`. If confirmation fails, it logs a warning and
 
 ## Network Behavior
 
-The SDK sends the OTA app key in `x-api-key` on confirmation requests. Confirmations include the app identifier, platform, channel, update ID, runtime version, stable device ID, and `transferSource`.
+The SDK sends the OTA App Key in `x-api-key` on confirmation requests. Confirmations include the app identifier, platform, channel, update ID, runtime version, stable device ID, and `transferSource`.
 
 `transferSource` is either `downloaded` or `cached` across Otalan mobile SDKs. This package always sends `downloaded` because it does not control update fetching and cannot confidently detect cached Expo launches. Treat this field as advisory client-reported metadata only.
 
-Update manifest requests require the OTA app key. Manifests can include direct immutable CDN asset URLs; `expo-updates` consumes those manifest-provided URLs and this SDK only confirms the launched update.
+Update manifest requests require the OTA App Key. Manifests can include direct immutable CDN asset URLs; `expo-updates` consumes those manifest-provided URLs and this SDK only confirms the launched update.
 
 Asset requests do not depend on this SDK or SDK-provided request headers.
 
@@ -409,7 +411,7 @@ Only active Otalan apps are eligible for Expo updates and install confirmations.
 
 - `initializeUpdater()` will create and persist `deviceId` for you unless you override it
 - use `getDeviceId()` when another part of your Expo update flow needs the same SDK-managed ID
-- `apiKey` is the public OTA app key and is sent in `x-api-key`
+- `apiKey` is the OTA App Key and is sent in `x-api-key`
 - repeated and concurrent confirmation calls for the same launched update are skipped
 - Expo confirmations use `downloaded` as the experimental transfer source metadata default
 - apps must be active in Otalan to receive updates

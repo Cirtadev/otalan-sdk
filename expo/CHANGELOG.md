@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.1 - 2026-05-21
+
+### Changed
+
+- Renamed key documentation to use OTA App Key for app-embedded update credentials and OTA Publish Key for release automation credentials.
+- Clarified that OTA App Keys can be embedded in mobile JS/TS bundles but should not be published or shared outside the app.
+
 ## 1.2.0 - 2026-05-18
 
 ### Breaking
@@ -28,7 +35,7 @@
 ### Changed
 
 - Reworded Expo update documentation for direct immutable CDN asset URLs in manifests.
-- Clarified that manifest requests require the OTA app key, while asset requests do not depend on SDK-provided request headers.
+- Clarified that manifest requests require the OTA App Key, while asset requests do not depend on SDK-provided request headers.
 - Clarified that Expo asset integrity belongs to the Expo runtime and manifest hash/key metadata, not to SDK-side SHA verification.
 
 ## 1.1.2 - 2026-05-07

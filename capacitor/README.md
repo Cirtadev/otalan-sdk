@@ -23,10 +23,10 @@ The SDK uses Capacitor's native HTTP transport for Otalan API calls on iOS and A
 - `@capawesome/capacitor-live-update`
 - `@capacitor/app`
 - `@capacitor/core`
-- an Otalan OTA app key
+- an Otalan OTA App Key
 - a stable device ID, or let `initializeUpdater()` create one
 
-Use the OTA app key in the app. Do not use a CI key in frontend code.
+Use the OTA App Key in the app. It can be embedded in mobile JS/TS bundles for update checks and install confirmations, but it is not a public identifier. Do not publish it in docs, issue trackers, logs, source control, or backend examples, and do not use OTA Publish Keys in app code.
 
 ## Supported Versions
 
@@ -82,7 +82,7 @@ const deviceId = await otalan.getDeviceId()
 
 ## Vue/Vite Example
 
-If you want to use environment variables, store your local Otalan values in your app's `.env` file and expose only client-safe public variables, such as `VITE_OTALAN_API_URL`, `VITE_OTALAN_API_KEY`, `VITE_OTALAN_APP_ID`, and `VITE_OTALAN_CHANNEL`.
+If you want to use environment variables, store your local Otalan values in your app's `.env` file and expose only client-bundled variables, such as `VITE_OTALAN_API_URL`, `VITE_OTALAN_API_KEY`, `VITE_OTALAN_APP_ID`, and `VITE_OTALAN_CHANNEL`.
 
 ```dotenv
 VITE_OTALAN_API_URL=https://api.otalan.com
@@ -253,7 +253,7 @@ If the message says `failed before response`, the request did not receive an HTT
 Config:
 
 - `apiUrl`: Otalan API base URL
-- `apiKey`: OTA app key
+- `apiKey`: OTA App Key
 - `appId`: app identifier
 - `channel`: release channel
 - `runtimeVersion`: optional local runtime version override, sent to Otalan as `runtimeVersion`
@@ -376,7 +376,7 @@ Returns `Promise<CapacitorSyncResult>`.
 
 ## Network Behavior
 
-The SDK sends the OTA app key with Otalan requests. Update checks include `appId`, `platform`, `channel`, `runtimeVersion`, `currentBundleId` when available, and the stable `deviceId`. Successful check responses must include matching `appId`, `platform`, and `runtimeVersion`; the SDK validates those fields before trusting `updateAvailable` or using any selected bundle. Missing or mismatched compatibility metadata rejects `check()` or `sync()`; `initializeUpdater()` logs the sync failure and leaves the host app running. Install confirmations include the app identifier, platform, channel, runtime version, bundle ID, stable device ID, and `transferSource`.
+The SDK sends the OTA App Key with Otalan requests. Update checks include `appId`, `platform`, `channel`, `runtimeVersion`, `currentBundleId` when available, and the stable `deviceId`. Successful check responses must include matching `appId`, `platform`, and `runtimeVersion`; the SDK validates those fields before trusting `updateAvailable` or using any selected bundle. Missing or mismatched compatibility metadata rejects `check()` or `sync()`; `initializeUpdater()` logs the sync failure and leaves the host app running. Install confirmations include the app identifier, platform, channel, runtime version, bundle ID, stable device ID, and `transferSource`.
 
 `transferSource` is either `downloaded` or `cached`. Treat it as advisory client-reported metadata only.
 

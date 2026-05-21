@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.1 - 2026-05-21
+
+### Changed
+
+- Renamed key documentation to use OTA App Key for app-embedded update credentials and OTA Publish Key for release automation credentials.
+- Clarified that OTA App Keys can be embedded in mobile JS/TS bundles but should not be published or shared outside the app.
+
 ## 1.4.0 - 2026-05-18
 
 ### Changed
