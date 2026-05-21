@@ -71,6 +71,8 @@ const deviceId = await otalan.getDeviceId()
 
 You can also pass these values from your app's environment variables. For example, keep local values in a `.env` file and read them with the env API provided by your app framework, such as Expo client-exposed env vars (`EXPO_PUBLIC_`) or Vite's `import.meta.env` (`VITE_`). These values are bundled into the mobile client; do not publish or share the OTA App Key outside the app.
 
+OTA App Key values use the `otalan_ota_...` token format. OTA Publish Key values use the `otalan_ci_...` token format and are for release automation only; never bundle OTA Publish Keys into app code.
+
 For Expo apps:
 
 ```dotenv

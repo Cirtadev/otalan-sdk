@@ -6,6 +6,7 @@
 
 - Renamed key documentation to use OTA App Key for app-embedded update credentials and OTA Publish Key for release automation credentials.
 - Clarified that OTA App Keys can be embedded in mobile JS/TS bundles but should not be published or shared outside the app.
+- Documented the `otalan_ota_...` token format for OTA App Keys and the `otalan_ci_...` token format for OTA Publish Keys.
 
 ## 1.2.0 - 2026-05-18
 

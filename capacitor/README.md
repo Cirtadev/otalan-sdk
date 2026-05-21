@@ -26,7 +26,9 @@ The SDK uses Capacitor's native HTTP transport for Otalan API calls on iOS and A
 - an Otalan OTA App Key
 - a stable device ID, or let `initializeUpdater()` create one
 
-Use the OTA App Key in the app. It can be embedded in mobile JS/TS bundles for update checks and install confirmations, but it is not a public identifier. Do not publish it in docs, issue trackers, logs, source control, or backend examples, and do not use OTA Publish Keys in app code.
+Use the OTA App Key in the app. It can be embedded in mobile JS/TS bundles for update checks and install confirmations, but it is not a public identifier. OTA App Key values use the `otalan_ota_...` token format. Do not publish them in docs, issue trackers, logs, source control, or backend examples.
+
+OTA Publish Key values use the `otalan_ci_...` token format and are for release automation only. Do not use OTA Publish Keys in app code.
 
 ## Supported Versions
 

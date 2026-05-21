@@ -236,7 +236,7 @@ describe('@otalan/capacitor metadata and checks', () => {
   })
 
   test('check includes request context when the API rejects the request', async () => {
-    fetchState.handler = async () => Response.json({ message: 'invalid OTA key' }, { status: 401 })
+    fetchState.handler = async () => Response.json({ message: 'invalid OTA App Key' }, { status: 401 })
 
     const updater = createUpdater({
       apiUrl: 'https://api.otalan.com',
@@ -247,7 +247,7 @@ describe('@otalan/capacitor metadata and checks', () => {
     })
 
     await expect(updater.check()).rejects.toThrow(
-      'POST https://api.otalan.com/capacitor/check failed with status 401: invalid OTA key',
+      'POST https://api.otalan.com/capacitor/check failed with status 401: invalid OTA App Key',
     )
   })
 

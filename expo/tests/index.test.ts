@@ -212,7 +212,7 @@ describe('@otalan/expo', () => {
   })
 
   test('confirmCurrentUpdate includes request context when the API rejects the request', async () => {
-    fetchState.handler = async () => Response.json({ message: 'invalid OTA key' }, { status: 401 })
+    fetchState.handler = async () => Response.json({ message: 'invalid OTA App Key' }, { status: 401 })
 
     const { createUpdater } = await loadSdk()
     const updater = createUpdater({
@@ -224,7 +224,7 @@ describe('@otalan/expo', () => {
     })
 
     await expect(updater.confirmCurrentUpdate()).rejects.toThrow(
-      'POST https://api.otalan.com/expo/confirm failed with status 401: invalid OTA key',
+      'POST https://api.otalan.com/expo/confirm failed with status 401: invalid OTA App Key',
     )
   })
 
