@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.1 - 2026-05-22
+
+### Fixed
+
+- Corrected the `expo-updates` peer dependency range for Expo SDK 54 support.
+
 ## 1.3.0 - 2026-05-22
 
 ### Fixed
