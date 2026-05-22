@@ -55,6 +55,69 @@ describe('@otalan/capacitor metadata and checks', () => {
     expect(fetchState.calls).toHaveLength(1)
     expect(capacitorHttpState.calls).toHaveLength(1)
     expect(capacitorHttpState.calls[0]?.responseType).toBe('json')
+    expect(capacitorHttpState.calls[0]?.connectTimeout).toBe(15_000)
+    expect(capacitorHttpState.calls[0]?.readTimeout).toBe(15_000)
+  })
+
+  test('check applies configured request timeouts to native HTTP requests', async () => {
+    fetchState.handler = async () => Response.json(buildCompatibleCheckResponse())
+
+    const updater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      deviceId: 'device-1',
+      requestTimeoutMs: 2_500,
+    })
+
+    await updater.check()
+
+    expect(capacitorHttpState.calls[0]?.connectTimeout).toBe(2_500)
+    expect(capacitorHttpState.calls[0]?.readTimeout).toBe(2_500)
+  })
+
+  test('check rejects slow native HTTP requests when the native plugin does not settle', async () => {
+    fetchState.handler = async () => new Promise<Response>(() => undefined)
+
+    const updater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      deviceId: 'device-1',
+      requestTimeoutMs: 1,
+    })
+
+    await expect(updater.check()).rejects.toThrow(
+      'POST https://api.otalan.com/capacitor/check timed out after 1ms.',
+    )
+    expect(capacitorHttpState.calls[0]?.connectTimeout).toBe(1)
+    expect(capacitorHttpState.calls[0]?.readTimeout).toBe(1)
+  })
+
+  test('check times out slow fetch requests outside native platforms', async () => {
+    capacitorState.isNativePlatform = false
+    fetchState.handler = async (_url, init) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => {
+        reject(new Error('aborted'))
+      })
+    })
+
+    const updater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      runtimeVersion: '1.0.0',
+      platform: 'ios',
+      deviceId: 'device-1',
+      requestTimeoutMs: 1,
+    })
+
+    await expect(updater.check()).rejects.toThrow(
+      'POST https://api.otalan.com/capacitor/check timed out after 1ms.',
+    )
   })
 
   test('check sends the running app compatibility context', async () => {
@@ -157,6 +220,7 @@ describe('@otalan/capacitor metadata and checks', () => {
       updateAvailable: true,
       bundleId: 'bundle-next',
       downloadUrl: 'https://cdn.example.com/bundle-next.zip',
+      checksum: '0'.repeat(64),
       appId: 'com.example.app',
       platform: 'ios',
       runtimeVersion: '1.0.0',
@@ -174,10 +238,136 @@ describe('@otalan/capacitor metadata and checks', () => {
       updateAvailable: true,
       bundleId: 'bundle-next',
       downloadUrl: 'https://cdn.example.com/bundle-next.zip',
+      checksum: '0'.repeat(64),
+      mandatory: false,
       appId: 'com.example.app',
       platform: 'ios',
       runtimeVersion: '1.0.0',
     })
+  })
+
+  test('check rejects update responses missing checksum integrity metadata', async () => {
+    fetchState.handler = async () => Response.json({
+      updateAvailable: true,
+      bundleId: 'bundle-next',
+      downloadUrl: 'https://cdn.example.com/bundle-next.zip',
+      appId: 'com.example.app',
+      platform: 'ios',
+      runtimeVersion: '1.0.0',
+    })
+
+    const updater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      deviceId: 'device-1',
+    })
+
+    await expect(updater.check()).rejects.toThrow(
+      'Otalan check response field "checksum" is required.',
+    )
+  })
+
+  test('check rejects insecure bundle download URLs by default', async () => {
+    fetchState.handler = async () => Response.json({
+      updateAvailable: true,
+      bundleId: 'bundle-next',
+      downloadUrl: 'http://cdn.example.com/bundle-next.zip',
+      checksum: '0'.repeat(64),
+      appId: 'com.example.app',
+      platform: 'ios',
+      runtimeVersion: '1.0.0',
+    })
+
+    const updater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      deviceId: 'device-1',
+    })
+
+    await expect(updater.check()).rejects.toThrow(
+      'Otalan check response field "downloadUrl" must use HTTPS.',
+    )
+  })
+
+  test('check rejects unsupported bundle URL schemes with explicit errors', async () => {
+    fetchState.handler = async () => Response.json({
+      updateAvailable: true,
+      bundleId: 'bundle-next',
+      downloadUrl: 'ftp://cdn.example.com/bundle-next.zip',
+      checksum: '0'.repeat(64),
+      appId: 'com.example.app',
+      platform: 'ios',
+      runtimeVersion: '1.0.0',
+    })
+
+    const updater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      deviceId: 'device-1',
+    })
+
+    await expect(updater.check()).rejects.toThrow(
+      'Otalan check response field "downloadUrl" uses unsupported URL scheme "ftp:".',
+    )
+  })
+
+  test('check allows insecure bundle URLs only when explicitly configured', async () => {
+    fetchState.handler = async () => Response.json({
+      updateAvailable: true,
+      bundleId: 'bundle-next',
+      downloadUrl: 'http://localhost:3000/bundle-next.zip',
+      checksum: '0'.repeat(64),
+      appId: 'com.example.app',
+      platform: 'ios',
+      runtimeVersion: '1.0.0',
+    })
+
+    const updater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      deviceId: 'device-1',
+      allowInsecureBundleUrls: true,
+    })
+
+    await expect(updater.check()).resolves.toMatchObject({
+      updateAvailable: true,
+      downloadUrl: 'http://localhost:3000/bundle-next.zip',
+      checksum: '0'.repeat(64),
+      mandatory: false,
+    })
+  })
+
+  test('check rejects malformed optional update fields', async () => {
+    fetchState.handler = async () => Response.json({
+      updateAvailable: true,
+      bundleId: 'bundle-next',
+      downloadUrl: 'https://cdn.example.com/bundle-next.zip',
+      checksum: '0'.repeat(64),
+      mandatory: 'yes',
+      appId: 'com.example.app',
+      platform: 'ios',
+      runtimeVersion: '1.0.0',
+    })
+
+    const updater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      deviceId: 'device-1',
+    })
+
+    await expect(updater.check()).rejects.toThrow(
+      'Otalan check response field "mandatory" was malformed.',
+    )
   })
 
   test('check falls back to fetch outside native platforms', async () => {

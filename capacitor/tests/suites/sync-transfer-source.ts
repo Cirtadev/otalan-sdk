@@ -12,8 +12,11 @@ import {
 type CompatibleUpdateInput = {
   bundleId: string
   downloadUrl: string
+  checksum?: string
   mandatory?: boolean
 }
+
+const DEFAULT_CHECKSUM = '0'.repeat(64)
 
 function buildCompatibleUpdate(input: CompatibleUpdateInput) {
   return {
@@ -21,6 +24,7 @@ function buildCompatibleUpdate(input: CompatibleUpdateInput) {
     appId: 'com.example.app',
     platform: 'ios',
     runtimeVersion: capacitorState.versionName,
+    checksum: DEFAULT_CHECKSUM,
     ...input,
   }
 }
@@ -114,7 +118,7 @@ describe('@otalan/capacitor sync transfer source behavior', () => {
       {
         url: 'https://cdn.example.com/bundle-next.zip',
         bundleId: 'bundle-next',
-        checksum: undefined,
+        checksum: DEFAULT_CHECKSUM,
       },
     ])
     expect(capacitorState.setNextCalls).toEqual([{ bundleId: 'bundle-next' }])
@@ -281,7 +285,7 @@ describe('@otalan/capacitor sync transfer source behavior', () => {
       {
         url: 'https://cdn.example.com/bundle-next.zip',
         bundleId: 'bundle-next',
-        checksum: undefined,
+        checksum: DEFAULT_CHECKSUM,
       },
     ])
   })

@@ -101,6 +101,34 @@ describe('@otalan/capacitor ready confirmation behavior', () => {
     expect(logger.warnCalls).toHaveLength(0)
   })
 
+  test('ready skips confirmations already persisted by a previous updater instance', async () => {
+    capacitorState.readyResult = { currentBundleId: 'bundle-1' }
+
+    fetchState.handler = async () => new Response(null, { status: 204 })
+
+    const firstUpdater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      deviceId: 'device-1',
+    })
+
+    await firstUpdater.ready()
+
+    const secondUpdater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      deviceId: 'device-1',
+    })
+
+    await secondUpdater.ready()
+
+    expect(fetchState.calls).toHaveLength(1)
+  })
+
   test('ready retries confirmation when the previous confirm failed', async () => {
     capacitorState.readyResult = { currentBundleId: 'bundle-1' }
 

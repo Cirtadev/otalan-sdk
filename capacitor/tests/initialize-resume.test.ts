@@ -13,6 +13,8 @@ type CapacitorHttpPostInput = {
   url: string
   headers?: Record<string, string>
   data?: unknown
+  connectTimeout?: number
+  readTimeout?: number
 }
 
 type ResumeHandler = () => void
@@ -125,8 +127,16 @@ async function responseToNativeHttpResponse(response: Response, url: string) {
   }
 }
 
-async function waitForAsyncResumeSync() {
-  await new Promise((resolve) => setTimeout(resolve, 0))
+async function waitForFetchCalls(count: number) {
+  for (let attempt = 0; attempt < 25; attempt += 1) {
+    if (fetchState.calls.length >= count) {
+      return
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+
+  throw new Error(`Expected at least ${count} fetch call(s), received ${fetchState.calls.length}.`)
 }
 
 beforeEach(() => {
@@ -158,12 +168,13 @@ describe('@otalan/capacitor initializeUpdater resume behavior', () => {
 
     expect(capacitorState.addListenerCalls).toHaveLength(1)
     expect(capacitorState.addListenerCalls[0]?.eventName).toBe('resume')
+    await waitForFetchCalls(1)
     expect(fetchState.calls.map((call) => call.url)).toEqual([
       'https://api.otalan.com/capacitor/check',
     ])
 
     capacitorState.addListenerCalls[0]?.handler()
-    await waitForAsyncResumeSync()
+    await waitForFetchCalls(2)
 
     expect(fetchState.calls.map((call) => call.url)).toEqual([
       'https://api.otalan.com/capacitor/check',
@@ -181,6 +192,7 @@ describe('@otalan/capacitor initializeUpdater resume behavior', () => {
     })
 
     expect(capacitorState.addListenerCalls).toHaveLength(0)
+    await waitForFetchCalls(1)
     expect(fetchState.calls.map((call) => call.url)).toEqual([
       'https://api.otalan.com/capacitor/check',
     ])

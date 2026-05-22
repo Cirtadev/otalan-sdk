@@ -40,11 +40,13 @@ Otalan serves OTA traffic only for apps that are active in Otalan. If update tra
 
 Capacitor update checks include `appId`, `platform`, `channel`, `runtimeVersion`, `currentBundleId` when available, and stable `deviceId`. Successful `/capacitor/check` responses must include matching `appId`, `platform`, and `runtimeVersion`; `@otalan/capacitor` validates those values before trusting `updateAvailable` or using any selected bundle.
 
-Expo update selection is handled by `expo-updates` and the Otalan manifest endpoint. `@otalan/expo` observes and confirms the launched update with its app, platform, channel, runtime version, update ID, and device ID context; it does not fetch or stage Expo updates itself.
+Expo update selection is handled by `expo-updates` and the Otalan manifest endpoint. `@otalan/expo` observes and confirms the launched update with its app, platform, channel, runtime version, Otalan bundle ID, and device ID context; it does not fetch or stage Expo updates itself.
 
 ## Startup Enablement
 
-When `enabled` is omitted, both startup helpers auto-enable only when their runtime and required config are available. Pass `enabled: false` to force a no-op. Pass `enabled: true` only when your app has its own gate, because it bypasses the helper's default platform and config checks and can surface missing or invalid config as startup request failures.
+When `enabled` is omitted, both startup helpers auto-enable only when their runtime and required config are available. Pass `enabled: false` to force a no-op. Pass `enabled: true` only when your app has its own gate, because it bypasses the helper's default config checks and can surface missing or invalid config as startup request failures. Native iOS and Android platform validation still applies.
+
+Startup helpers start their launch confirmation or sync work in the background after setup. They do not wait for the network before resolving; call `initialized.ready()` or `initialized.sync()` if your app explicitly needs to await the current in-flight work.
 
 ## Device IDs
 
@@ -143,11 +145,9 @@ Runtime support is for native mobile apps:
 ## Version Support
 
 - `@otalan/capacitor` officially supports Capacitor 7 and 8.
-- `@otalan/expo` officially supports Expo SDK 54 and 55.
+- `@otalan/expo` officially supports Expo SDK 54, 55, and 56.
 
-The package peer dependencies are intentionally permissive so unsupported combinations can still install and be evaluated.
-
-Other runtimes and older Expo or Capacitor versions may work, but they are outside the official support range for the moment. We do not offer support for unsupported combinations and do not take responsibility for issues caused by using them.
+The package peer dependencies warn outside those supported major ranges. Other runtimes and older Expo or Capacitor versions may work with package-manager overrides, but they are outside the official support range for the moment. We do not offer support for unsupported combinations and do not take responsibility for issues caused by using them.
 
 ## Consumer Install
 

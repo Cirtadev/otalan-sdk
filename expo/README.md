@@ -28,12 +28,13 @@ This package is intentionally small. It does not replace `expo-updates`. Update 
 
 ## Supported Versions
 
-This package officially supports Expo SDK 54 and 55:
+This package officially supports Expo SDK 54, 55, and 56:
 
 - Expo SDK 54
 - Expo SDK 55
+- Expo SDK 56
 
-The package peer dependencies are intentionally permissive so other runtimes and older Expo SDK versions can still install and be evaluated. Other runtimes and older Expo SDK versions may work, but they are outside the official support range for the moment. We do not offer support for unsupported combinations and do not take responsibility for issues caused by using them.
+The package peer dependencies warn outside Expo SDK 54, 55, and 56 update runtimes. Other runtimes and older Expo SDK versions may work with package-manager overrides, but they are outside the official support range for the moment. We do not offer support for unsupported combinations and do not take responsibility for issues caused by using them.
 
 ## Install
 
@@ -82,7 +83,7 @@ Example `app.json` or `app.config.json`:
 
 Your configured update service is still responsible for manifest responses and asset URLs. Manifests can include direct immutable CDN asset URLs.
 
-`expo-updates` and the configured Otalan manifest endpoint own update selection and runtime compatibility. This helper observes the already launched update metadata and confirms it; it does not fetch, stage, or independently verify Expo manifest compatibility.
+`expo-updates` and the configured Otalan manifest endpoint own update selection and runtime compatibility. This helper observes the already launched update metadata and confirms it with the Otalan bundle ID from the manifest; it does not fetch, stage, or independently verify Expo manifest compatibility.
 
 Use `checkAutomatically` with an active update policy such as `ON_LOAD` or `WIFI_ONLY` when your rollout selection does not depend on runtime headers. For staged rollouts that need a runtime `x-device-id`, use manual checks so JS can set the real header first.
 
@@ -279,7 +280,7 @@ Unlike `@otalan/capacitor`, this package does not report `cached` confirmations.
 When `enabled` is omitted, `initializeUpdater()`:
 
 - creates the low-level helper
-- runs `ready()` once during startup
+- starts `ready()` once in the background during startup
 - creates and persists a stable `deviceId` unless you provide one
 - exposes the resolved `deviceId` through `getDeviceId()`
 - no-ops outside native iOS and Android
@@ -288,9 +289,11 @@ When `enabled` is omitted, `initializeUpdater()`:
 - logs device ID storage failures and returns a no-op updater
 - swallows confirmation failures and logs warnings instead
 
-Pass `enabled: false` to force a no-op. Pass `enabled: true` only when your app has its own runtime/config gate, because it bypasses the default platform, `expo-updates`, and required config checks. With `enabled: true`, missing or invalid `apiUrl`, `apiKey`, or `channel` values can produce startup confirmation warnings instead of the helper silently no-oping.
+Pass `enabled: false` to force a no-op. Pass `enabled: true` only when your app has its own runtime/config gate, because it bypasses the default `expo-updates` and required config checks. Native iOS and Android platform validation still applies. With `enabled: true`, missing or invalid `apiUrl`, `apiKey`, or `channel` values can produce startup confirmation warnings instead of the helper silently no-oping.
 
 If startup logs `Otalan install confirmation failed.`, the failure happened during the confirmation request. The SDK logs a serializable `{ sdkName, sdkVersion, name, message }` error payload so native consoles can show the installed SDK version, HTTP status, API message, or fetch failure instead of an empty `{}`.
+
+`initializeUpdater()` resolves after setup and does not wait for the confirmation request to finish. Call `initialized.ready()` if your app needs to await the current startup confirmation or retry it later.
 
 ## API
 
@@ -304,6 +307,7 @@ Config:
 - `channel`: release channel
 - `autoConfirm`: defaults to `true`
 - `deviceId`: required stable device ID
+- `requestTimeoutMs`: request timeout for Otalan API calls, defaults to `15000`
 - `headers`: optional extra request headers
 - `logger`: optional warning logger
 
@@ -321,14 +325,14 @@ Config:
 - `deviceId`: optional explicit stable device ID override
 - `deviceIdStorage`: optional async storage adapter with `getItem()` and `setItem()`
 - `deviceIdStorageKey`: optional storage key, defaults to `otalan-device-id`
-- `enabled`: optional explicit gate. Omit for default platform, `expo-updates`, and required config checks, pass `false` to force-disable, or pass `true` to force initialization and bypass those default checks.
+- `enabled`: optional explicit gate. Omit for default platform, `expo-updates`, and required config checks, pass `false` to force-disable, or pass `true` to force initialization and bypass default `expo-updates` and required config checks. Native platform validation still applies.
 - `logger`: optional warning logger
 
 Returns:
 
 - `getDeviceId()`: resolves the stable device ID or `null` when no updater is enabled and no explicit ID was provided
 - `getUpdater()`: returns the helper or `null`
-- `ready()`: runs startup confirmation and returns `ExpoReadyResult | null`
+- `ready()`: awaits the startup confirmation helper and returns `ExpoReadyResult | null`
 
 ### `await initialized.getDeviceId()`
 
@@ -359,6 +363,7 @@ Returns `Promise<ExpoReadyResult>`:
 - `confirmed`
 - `isEmbeddedLaunch`
 - `isEmergencyLaunch`
+- `bundleId`
 - `runtimeVersion`
 - `transferSource` (experimental)
 - `updateId`
@@ -375,7 +380,7 @@ By default this skips:
 - disabled `expo-updates`
 - emergency launches
 - embedded launches
-- launches with no `updateId`
+- launched updates without Otalan bundle metadata
 
 ### `await updater.ready()`
 
@@ -391,13 +396,14 @@ Returns `Promise<ExpoReadyResult>`. If confirmation fails, it logs a warning and
 - `confirmed`: whether the current update was confirmed by this call
 - `isEmbeddedLaunch`: whether the embedded app bundle is running
 - `isEmergencyLaunch`: whether Expo launched in emergency mode
+- `bundleId`: Otalan bundle ID from the running manifest when available
 - `runtimeVersion`: current runtime version when available
 - `transferSource`: experimental transfer metadata when confirmation succeeds
 - `updateId`: current Expo update ID when available
 
 ## Network Behavior
 
-The SDK sends the OTA App Key in `x-api-key` on confirmation requests. Confirmations include the app identifier, platform, channel, update ID, runtime version, stable device ID, and `transferSource`.
+The SDK sends the OTA App Key in `x-api-key` on confirmation requests. Confirmations include the app identifier, platform, channel, Otalan bundle ID, runtime version, stable device ID, and `transferSource`. Confirmation requests time out after `requestTimeoutMs`, defaulting to 15 seconds.
 
 `transferSource` is either `downloaded` or `cached` across Otalan mobile SDKs. This package always sends `downloaded` because it does not control update fetching and cannot confidently detect cached Expo launches. Treat this field as advisory client-reported metadata only.
 
@@ -414,7 +420,7 @@ Only active Otalan apps are eligible for Expo updates and install confirmations.
 - `initializeUpdater()` will create and persist `deviceId` for you unless you override it
 - use `getDeviceId()` when another part of your Expo update flow needs the same SDK-managed ID
 - `apiKey` is the OTA App Key and is sent in `x-api-key`
-- repeated and concurrent confirmation calls for the same launched update are skipped
+- repeated and concurrent confirmation calls for the same launched update are skipped, including later app starts when AsyncStorage is available
 - Expo confirmations use `downloaded` as the experimental transfer source metadata default
 - apps must be active in Otalan to receive updates
 - production API URL is usually `https://api.otalan.com`

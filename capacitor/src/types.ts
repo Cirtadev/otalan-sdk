@@ -12,8 +12,8 @@ export type CapacitorCheckResult =
     updateAvailable: true
     bundleId: string
     downloadUrl: string
-    checksum?: string | null
-    mandatory?: boolean
+    checksum: string
+    mandatory: boolean
     rolloutPercent?: number
     releaseNotes?: string | null
   })
@@ -38,6 +38,8 @@ export type CapacitorUpdaterConfig = {
   deviceId: string
   autoConfirm?: boolean
   reloadOnSync?: boolean
+  requestTimeoutMs?: number
+  allowInsecureBundleUrls?: boolean
   headers?: HeadersInit
   logger?: Pick<Console, 'warn'>
 }

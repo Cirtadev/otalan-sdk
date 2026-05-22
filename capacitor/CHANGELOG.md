@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.5.0 - 2026-05-22
+
+### Fixed
+
+- Rejected Capacitor check responses that omit bundle checksums, use non-HTTPS bundle download URLs by default, or provide malformed optional update fields.
+- Added Otalan API request timeouts for both native HTTP and fetch paths.
+- Started launch sync in the background so `initializeUpdater()` no longer waits on network or bundle download work before resolving.
+- Switched generated device IDs to `crypto.randomUUID()` or `crypto.getRandomValues()` when available.
+- Persisted successful install-confirmation tuples so later app starts skip already-confirmed bundle/device installs when local storage is available.
+
+### Changed
+
+- Default missing `mandatory` values to `false` instead of `true`.
+- Added `requestTimeoutMs` and `allowInsecureBundleUrls` config options.
+- Restricted Capacitor peer dependency ranges to supported Capacitor and Capawesome Live Update majors 7 and 8.
+
+### Tests
+
+- Added regression coverage for checksum enforcement, HTTPS bundle URL enforcement, request timeouts, nonblocking startup sync, malformed check response fields, and persisted install-confirmation skips.
+
 ## 1.4.1 - 2026-05-21
 
 ### Changed

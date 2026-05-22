@@ -48,10 +48,10 @@ export async function setNextBundle(bundleId: string) {
   })
 }
 
-export async function reloadBundle(bundleId: string) {
+export async function reloadStagedBundle(bundleIdForLog: string) {
   await LiveUpdate.reload().catch((error) => {
     throw buildLiveUpdateFailureError('LiveUpdate.reload', error, {
-      bundleId,
+      bundleId: bundleIdForLog,
     })
   })
 }

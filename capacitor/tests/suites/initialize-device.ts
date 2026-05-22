@@ -9,6 +9,8 @@ import {
   fetchState,
   initializeUpdater,
   readJsonBody,
+  waitForFetchCalls,
+  waitForWarnCalls,
 } from '../helpers/capacitor-test-harness'
 
 describe('@otalan/capacitor initializeUpdater device behavior', () => {
@@ -32,6 +34,7 @@ describe('@otalan/capacitor initializeUpdater device behavior', () => {
     })
 
     const deviceId = await updater.getDeviceId()
+    await waitForFetchCalls(1)
 
     expect(deviceId?.startsWith('otalan-capacitor-')).toBe(true)
     expect(globalThis.localStorage.getItem('otalan-device-id')).toBe(deviceId)
@@ -55,6 +58,8 @@ describe('@otalan/capacitor initializeUpdater device behavior', () => {
       deviceId: 'device-override',
       onResume: false,
     })
+
+    await waitForFetchCalls(1)
 
     expect(await updater.getDeviceId()).toBe('device-override')
     expect(globalThis.localStorage.getItem('otalan-device-id')).toBeNull()
@@ -106,6 +111,8 @@ describe('@otalan/capacitor initializeUpdater device behavior', () => {
       deviceIdStorageKey: 'custom-device-key',
       onResume: false,
     })
+
+    await waitForFetchCalls(1)
 
     expect(await updater.getDeviceId()).toBe('custom-device-1')
     expect(storageCalls.getItem).toEqual(['custom-device-key'])
@@ -161,6 +168,8 @@ describe('@otalan/capacitor initializeUpdater device behavior', () => {
       logger: logger.logger,
     })
 
+    await waitForWarnCalls(logger.warnCalls, 1)
+
     expect(logger.warnCalls).toEqual([
       [
         '[ota] launch sync failed',
@@ -188,6 +197,8 @@ describe('@otalan/capacitor initializeUpdater device behavior', () => {
       deviceId: 'device-1',
       logger: logger.logger,
     })
+
+    await waitForWarnCalls(logger.warnCalls, 1)
 
     expect(logger.warnCalls).toEqual([
       [
@@ -222,6 +233,8 @@ describe('@otalan/capacitor initializeUpdater device behavior', () => {
       deviceId: 'device-1',
       logger: logger.logger,
     })
+
+    await waitForFetchCalls(1)
 
     expect(capacitorState.addListenerCalls).toBe(1)
     expect(fetchState.calls.map((call) => call.url)).toEqual([

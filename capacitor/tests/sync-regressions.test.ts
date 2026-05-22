@@ -13,6 +13,8 @@ type CapacitorHttpPostInput = {
   url: string
   headers?: Record<string, string>
   data?: unknown
+  connectTimeout?: number
+  readTimeout?: number
 }
 
 const capacitorState = {
@@ -165,14 +167,29 @@ type CompatibleUpdateInput = {
   mandatory?: boolean
 }
 
+const DEFAULT_CHECKSUM = '0'.repeat(64)
+
 function buildCompatibleCryptosanUpdate(input: CompatibleUpdateInput) {
   return {
     updateAvailable: true,
     appId: 'app.cryptosan.app',
     platform: 'ios',
     runtimeVersion: capacitorState.versionName,
+    checksum: DEFAULT_CHECKSUM,
     ...input,
   }
+}
+
+async function waitForWarnCalls(warnCalls: unknown[][], count: number) {
+  for (let attempt = 0; attempt < 25; attempt += 1) {
+    if (warnCalls.length >= count) {
+      return
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+
+  throw new Error(`Expected at least ${count} warning call(s), received ${warnCalls.length}.`)
 }
 
 beforeEach(() => {
@@ -227,7 +244,7 @@ describe('@otalan/capacitor sync regressions', () => {
       {
         url: 'https://cdn.example.com/1.0.0-2.zip',
         bundleId: '1.0.0-2',
-        checksum: undefined,
+        checksum: DEFAULT_CHECKSUM,
       },
     ])
     expect(capacitorState.setNextCalls).toEqual([{ bundleId: '1.0.0-2' }])
@@ -330,6 +347,8 @@ describe('@otalan/capacitor sync regressions', () => {
       deviceId: 'device-1',
       logger: logger.logger,
     })
+
+    await waitForWarnCalls(logger.warnCalls, 1)
 
     expect(logger.warnCalls).toEqual([
       [

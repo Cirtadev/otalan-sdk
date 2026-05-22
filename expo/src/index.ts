@@ -23,6 +23,7 @@ export type ExpoUpdaterConfig = {
   channel: string
   autoConfirm?: boolean
   deviceId: string
+  requestTimeoutMs?: number
   headers?: HeadersInit
   logger?: Pick<Console, 'warn'>
 }
@@ -32,6 +33,7 @@ export type ExpoReadyResult = {
   confirmed: boolean
   isEmbeddedLaunch: boolean
   isEmergencyLaunch: boolean
+  bundleId?: string
   runtimeVersion?: string
   /** @experimental Advisory client-reported transfer metadata. */
   transferSource?: ExpoTransferSource
@@ -57,7 +59,10 @@ export type InitializedExpoUpdater = {
 // -----------------------------------------------------------------------------
 
 const DEFAULT_DEVICE_ID_STORAGE_KEY = 'otalan-device-id'
+const DEFAULT_REQUEST_TIMEOUT_MS = 15_000
 const DEFAULT_TRANSFER_SOURCE: ExpoTransferSource = 'downloaded'
+const CONFIRMED_INSTALL_STORAGE_KEY_PREFIX = 'otalan:expo:confirmed-install:'
+const MAX_SERIALIZED_CAUSE_DEPTH = 5
 
 export const OTALAN_EXPO_SDK_NAME = packageJson.name
 export const OTALAN_EXPO_SDK_VERSION = packageJson.version
@@ -117,8 +122,22 @@ function requireDeviceId(config: Pick<ExpoUpdaterConfig, 'deviceId'>) {
 }
 
 function createDeviceId() {
+  return `otalan-expo-${createRandomToken()}`
+}
+
+function createRandomToken() {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID()
+  }
+
+  if (globalThis.crypto?.getRandomValues) {
+    const bytes = new Uint8Array(16)
+    globalThis.crypto.getRandomValues(bytes)
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+  }
+
   const randomPart = Math.random().toString(36).slice(2, 10)
-  return `otalan-expo-${Date.now().toString(36)}-${randomPart}`
+  return `${Date.now().toString(36)}-${randomPart}`
 }
 
 async function getOrCreateDeviceId(
@@ -136,13 +155,31 @@ async function getOrCreateDeviceId(
   return nextDeviceId
 }
 
-async function postJson(url: string, body: unknown, headers: HeadersInit) {
+function resolveRequestTimeoutMs(config: Pick<ExpoUpdaterConfig, 'requestTimeoutMs'>) {
+  return typeof config.requestTimeoutMs === 'number'
+    && Number.isFinite(config.requestTimeoutMs)
+    && config.requestTimeoutMs > 0
+    ? config.requestTimeoutMs
+    : DEFAULT_REQUEST_TIMEOUT_MS
+}
+
+async function postJson(url: string, body: unknown, headers: HeadersInit, timeoutMs: number) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => {
+    controller.abort()
+  }, timeoutMs)
+
   const response = await fetch(url, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
+    signal: controller.signal,
   }).catch((error) => {
-    throw buildRequestFailureError(url, error)
+    throw controller.signal.aborted
+      ? buildRequestTimeoutError(url, timeoutMs, error)
+      : buildRequestFailureError(url, error)
+  }).finally(() => {
+    clearTimeout(timeout)
   })
 
   if (!response.ok) {
@@ -154,11 +191,8 @@ async function readErrorResponseMessage(response: Response) {
   const contentType = response.headers.get('content-type') ?? ''
 
   if (contentType.includes('application/json')) {
-    const payload = await response.json().catch(() => ({})) as {
-      message?: string
-    }
-
-    return payload.message
+    const payload = await response.json().catch(() => ({}))
+    return readErrorPayloadMessage(payload)
   }
 
   const body = await response.text().catch(() => '')
@@ -170,8 +204,36 @@ function buildHttpErrorMessage(url: string, response: Response, message?: string
   return message ? `${statusMessage}: ${message}` : statusMessage
 }
 
+function readErrorPayloadMessage(payload: unknown) {
+  if (!isRecord(payload)) {
+    return undefined
+  }
+
+  const message = readStringField(payload, 'message')
+  if (message) {
+    return message
+  }
+
+  const error = payload.error
+  if (typeof error === 'string' && error) {
+    return error
+  }
+
+  if (isRecord(error)) {
+    return readStringField(error, 'message')
+  }
+
+  return undefined
+}
+
 function buildRequestFailureError(url: string, error: unknown) {
   return new Error(`POST ${url} failed before response: ${readErrorMessage(error)}`, {
+    cause: error,
+  })
+}
+
+function buildRequestTimeoutError(url: string, timeoutMs: number, error: unknown) {
+  return new Error(`POST ${url} timed out after ${timeoutMs}ms.`, {
     cause: error,
   })
 }
@@ -185,12 +247,24 @@ function readStringField(value: Record<string, unknown>, field: string) {
   return typeof fieldValue === 'string' && fieldValue ? fieldValue : undefined
 }
 
+function readRecordField(value: Record<string, unknown>, field: string) {
+  const fieldValue = value[field]
+  return isRecord(fieldValue) ? fieldValue : undefined
+}
+
 function readCodeField(value: Record<string, unknown>) {
   const code = value.code
   return typeof code === 'string' || typeof code === 'number' ? code : undefined
 }
 
-function serializeErrorForLog(error: unknown): unknown {
+function serializeErrorForLog(error: unknown, depth = 0): unknown {
+  if (depth > MAX_SERIALIZED_CAUSE_DEPTH) {
+    return {
+      ...SDK_LOG_CONTEXT,
+      message: 'Error cause depth exceeded.',
+    }
+  }
+
   if (!isRecord(error)) {
     return {
       ...SDK_LOG_CONTEXT,
@@ -201,7 +275,7 @@ function serializeErrorForLog(error: unknown): unknown {
   const name = error instanceof Error ? error.name : readStringField(error, 'name')
   const message = error instanceof Error ? error.message : readStringField(error, 'message')
   const code = readCodeField(error)
-  const cause = 'cause' in error ? serializeErrorForLog(error.cause) : undefined
+  const cause = 'cause' in error ? serializeErrorForLog(error.cause, depth + 1) : undefined
 
   if (!name && !message && code === undefined && cause === undefined) {
     return {
@@ -224,6 +298,62 @@ function readErrorMessage(error: unknown) {
   return isRecord(serialized) && typeof serialized.message === 'string'
     ? serialized.message
     : String(error)
+}
+
+function resolveOtalanManifestMetadata(manifest: unknown) {
+  if (!isRecord(manifest)) {
+    return {}
+  }
+
+  const metadata = readRecordField(manifest, 'metadata')
+  const extra = readRecordField(manifest, 'extra')
+  const otalan = extra ? readRecordField(extra, 'otalan') : undefined
+  const metadataBundleId = metadata ? readStringField(metadata, 'bundleId') : undefined
+  const otalanBundleId = otalan ? readStringField(otalan, 'bundleId') : undefined
+
+  return {
+    bundleId: metadataBundleId ?? otalanBundleId,
+    runtimeVersion: readStringField(manifest, 'runtimeVersion')
+      ?? (otalan ? readStringField(otalan, 'runtimeVersion') : undefined),
+  }
+}
+
+function buildConfirmationKey(input: {
+  appId: string
+  platform: 'ios' | 'android'
+  channel: string
+  runtimeVersion: string
+  bundleId: string
+  deviceId: string
+}) {
+  return [
+    input.appId,
+    input.platform,
+    input.channel,
+    input.runtimeVersion,
+    input.bundleId,
+    input.deviceId,
+  ].map(encodeURIComponent).join(':')
+}
+
+async function hasStoredInstallConfirmation(confirmationKey: string) {
+  try {
+    return await AsyncStorage.getItem(buildInstallConfirmationStorageKey(confirmationKey)) === '1'
+  } catch {
+    return false
+  }
+}
+
+async function writeStoredInstallConfirmation(confirmationKey: string) {
+  try {
+    await AsyncStorage.setItem(buildInstallConfirmationStorageKey(confirmationKey), '1')
+  } catch {
+    // Backend confirm idempotency still prevents duplicate first-install counts.
+  }
+}
+
+function buildInstallConfirmationStorageKey(confirmationKey: string) {
+  return `${CONFIRMED_INSTALL_STORAGE_KEY_PREFIX}${confirmationKey}`
 }
 
 // -----------------------------------------------------------------------------
@@ -264,6 +394,7 @@ export async function initializeUpdater(
         channel: config.channel,
         autoConfirm: config.autoConfirm,
         deviceId,
+        requestTimeoutMs: config.requestTimeoutMs,
         headers: config.headers,
         logger,
       })
@@ -306,15 +437,15 @@ export async function initializeUpdater(
     ready,
   }
 
-  await ready()
+  void ready()
   return managedUpdater
 }
 
 export function createUpdater(config: ExpoUpdaterConfig) {
   const logger = config.logger ?? console
   const deviceId = requireDeviceId(config)
-  let confirmedUpdateId: string | null = null
-  const confirmingUpdatePromises = new Map<string, Promise<ExpoReadyResult>>()
+  let confirmedBundleKey: string | null = null
+  const confirmingBundlePromises = new Map<string, Promise<ExpoReadyResult>>()
 
   async function getCurrentUpdate(): Promise<ExpoReadyResult> {
     if (!Updates.isEnabled) {
@@ -326,12 +457,15 @@ export function createUpdater(config: ExpoUpdaterConfig) {
       } satisfies ExpoReadyResult
     }
 
+    const otalanManifestMetadata = resolveOtalanManifestMetadata(Updates.manifest)
+
     return {
       enabled: true,
       confirmed: false,
       isEmbeddedLaunch: Updates.isEmbeddedLaunch,
       isEmergencyLaunch: Updates.isEmergencyLaunch,
-      runtimeVersion: Updates.runtimeVersion ?? undefined,
+      bundleId: otalanManifestMetadata.bundleId,
+      runtimeVersion: Updates.runtimeVersion ?? otalanManifestMetadata.runtimeVersion,
       updateId: Updates.updateId ?? undefined,
     } satisfies ExpoReadyResult
   }
@@ -343,11 +477,7 @@ export function createUpdater(config: ExpoUpdaterConfig) {
       return current
     }
 
-    if (!config.autoConfirm && config.autoConfirm !== undefined) {
-      return current
-    }
-
-    if (!current.updateId) {
+    if (config.autoConfirm === false) {
       return current
     }
 
@@ -359,9 +489,21 @@ export function createUpdater(config: ExpoUpdaterConfig) {
       return current
     }
 
-    const updateId = current.updateId
+    if (!current.bundleId || !current.runtimeVersion) {
+      return current
+    }
 
-    if (updateId === confirmedUpdateId) {
+    const platform = resolvePlatform()
+    const confirmationKey = buildConfirmationKey({
+      appId: config.appId,
+      platform,
+      channel: config.channel,
+      runtimeVersion: current.runtimeVersion,
+      bundleId: current.bundleId,
+      deviceId,
+    })
+
+    if (confirmationKey === confirmedBundleKey) {
       return {
         ...current,
         confirmed: true,
@@ -369,7 +511,17 @@ export function createUpdater(config: ExpoUpdaterConfig) {
       } satisfies ExpoReadyResult
     }
 
-    const existingConfirmation = confirmingUpdatePromises.get(updateId)
+    if (await hasStoredInstallConfirmation(confirmationKey)) {
+      confirmedBundleKey = confirmationKey
+
+      return {
+        ...current,
+        confirmed: true,
+        transferSource: DEFAULT_TRANSFER_SOURCE,
+      } satisfies ExpoReadyResult
+    }
+
+    const existingConfirmation = confirmingBundlePromises.get(confirmationKey)
     if (existingConfirmation) {
       return existingConfirmation
     }
@@ -379,17 +531,19 @@ export function createUpdater(config: ExpoUpdaterConfig) {
         joinUrl(config.apiUrl, '/expo/confirm'),
         {
           appId: config.appId,
-          platform: resolvePlatform(),
+          platform,
           channel: config.channel,
-          updateId,
+          bundleId: current.bundleId,
           runtimeVersion: current.runtimeVersion,
           deviceId,
           transferSource: DEFAULT_TRANSFER_SOURCE,
         },
         buildHeaders(config),
+        resolveRequestTimeoutMs(config),
       )
 
-      confirmedUpdateId = updateId
+      await writeStoredInstallConfirmation(confirmationKey)
+      confirmedBundleKey = confirmationKey
 
       return {
         ...current,
@@ -397,10 +551,10 @@ export function createUpdater(config: ExpoUpdaterConfig) {
         transferSource: DEFAULT_TRANSFER_SOURCE,
       } satisfies ExpoReadyResult
     })().finally(() => {
-      confirmingUpdatePromises.delete(updateId)
+      confirmingBundlePromises.delete(confirmationKey)
     })
 
-    confirmingUpdatePromises.set(updateId, confirmationPromise)
+    confirmingBundlePromises.set(confirmationKey, confirmationPromise)
     return confirmationPromise
   }
 

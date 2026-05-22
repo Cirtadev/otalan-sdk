@@ -9,10 +9,30 @@ type FetchCall = {
   init?: RequestInit
 }
 
+function createExpoManifest(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'update-1',
+    runtimeVersion: '1.0.0',
+    metadata: {
+      bundleId: 'bundle-1',
+      channel: 'production',
+    },
+    extra: {
+      otalan: {
+        bundleId: 'bundle-1',
+        runtimeVersion: '1.0.0',
+        releaseNotes: null,
+      },
+    },
+    ...overrides,
+  }
+}
+
 const asyncStorageState = {
   getItemCalls: [] as string[],
   setItemCalls: [] as Array<{ key: string; value: string }>,
   storedValue: null as string | null,
+  storedItems: new Map<string, string>(),
   getItemError: null as Error | null,
   setItemError: null as Error | null,
 }
@@ -22,8 +42,9 @@ const expoState = {
   isEnabled: true,
   isEmbeddedLaunch: false,
   isEmergencyLaunch: false,
-  runtimeVersion: '1.0.0',
+  runtimeVersion: '1.0.0' as string | null,
   updateId: 'update-1' as string | undefined,
+  manifest: createExpoManifest(),
 }
 
 const fetchState = {
@@ -58,7 +79,7 @@ function applyModuleMocks() {
           throw asyncStorageState.getItemError
         }
 
-        return asyncStorageState.storedValue
+        return asyncStorageState.storedItems.get(key) ?? null
       },
       setItem: async (key: string, value: string) => {
         asyncStorageState.setItemCalls.push({ key, value })
@@ -67,7 +88,10 @@ function applyModuleMocks() {
           throw asyncStorageState.setItemError
         }
 
-        asyncStorageState.storedValue = value
+        asyncStorageState.storedItems.set(key, value)
+        if (!key.startsWith('otalan:expo:confirmed-install:')) {
+          asyncStorageState.storedValue = value
+        }
       },
     },
   }))
@@ -84,6 +108,7 @@ function applyModuleMocks() {
     isEmergencyLaunch: expoState.isEmergencyLaunch,
     runtimeVersion: expoState.runtimeVersion,
     updateId: expoState.updateId,
+    manifest: expoState.manifest,
   }))
 }
 
@@ -114,10 +139,37 @@ function createLogger() {
   }
 }
 
+async function waitForFetchCalls(count: number) {
+  await waitForCondition(
+    () => fetchState.calls.length >= count,
+    `Expected at least ${count} fetch call(s), received ${fetchState.calls.length}.`,
+  )
+}
+
+async function waitForWarnCalls(warnCalls: unknown[][], count: number) {
+  await waitForCondition(
+    () => warnCalls.length >= count,
+    `Expected at least ${count} warning call(s), received ${warnCalls.length}.`,
+  )
+}
+
+async function waitForCondition(condition: () => boolean, message: string) {
+  for (let attempt = 0; attempt < 25; attempt += 1) {
+    if (condition()) {
+      return
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+
+  throw new Error(message)
+}
+
 beforeEach(() => {
   asyncStorageState.getItemCalls = []
   asyncStorageState.setItemCalls = []
   asyncStorageState.storedValue = null
+  asyncStorageState.storedItems = new Map()
   asyncStorageState.getItemError = null
   asyncStorageState.setItemError = null
 
@@ -127,6 +179,7 @@ beforeEach(() => {
   expoState.isEmergencyLaunch = false
   expoState.runtimeVersion = '1.0.0'
   expoState.updateId = 'update-1'
+  expoState.manifest = createExpoManifest()
 
   fetchState.calls = []
   fetchState.handler = async (url: string, init?: RequestInit) => {
@@ -198,13 +251,14 @@ describe('@otalan/expo', () => {
     const result = await updater.confirmCurrentUpdate()
 
     expect(result.confirmed).toBe(true)
+    expect(result.bundleId).toBe('bundle-1')
     expect(result.transferSource).toBe('downloaded')
     expect(fetchState.calls).toHaveLength(1)
     expect(readJsonBody(fetchState.calls[0]!)).toEqual({
       appId: 'com.example.app',
       platform: 'ios',
       channel: 'production',
-      updateId: 'update-1',
+      bundleId: 'bundle-1',
       runtimeVersion: '1.0.0',
       deviceId: 'device-1',
       transferSource: 'downloaded',
@@ -228,6 +282,27 @@ describe('@otalan/expo', () => {
     )
   })
 
+  test('confirmCurrentUpdate surfaces nested API error messages', async () => {
+    fetchState.handler = async () => Response.json({
+      error: {
+        message: 'runtimeVersion is required',
+      },
+    }, { status: 400 })
+
+    const { createUpdater } = await loadSdk()
+    const updater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      deviceId: 'device-1',
+    })
+
+    await expect(updater.confirmCurrentUpdate()).rejects.toThrow(
+      'POST https://api.otalan.com/expo/confirm failed with status 400: runtimeVersion is required',
+    )
+  })
+
   test('confirmCurrentUpdate includes request context when fetch fails before a response', async () => {
     fetchState.handler = async () => {
       throw new TypeError('Load failed')
@@ -244,6 +319,28 @@ describe('@otalan/expo', () => {
 
     await expect(updater.confirmCurrentUpdate()).rejects.toThrow(
       'POST https://api.otalan.com/expo/confirm failed before response: Load failed',
+    )
+  })
+
+  test('confirmCurrentUpdate times out slow confirmation requests', async () => {
+    fetchState.handler = async (_url, init) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => {
+        reject(new Error('aborted'))
+      })
+    })
+
+    const { createUpdater } = await loadSdk()
+    const updater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      deviceId: 'device-1',
+      requestTimeoutMs: 1,
+    })
+
+    await expect(updater.confirmCurrentUpdate()).rejects.toThrow(
+      'POST https://api.otalan.com/expo/confirm timed out after 1ms.',
     )
   })
 
@@ -265,6 +362,8 @@ describe('@otalan/expo', () => {
       deviceId: 'device-1',
       logger: logger.logger,
     })
+
+    await waitForWarnCalls(logger.warnCalls, 1)
 
     expect(logger.warnCalls).toEqual([
       [
@@ -298,6 +397,66 @@ describe('@otalan/expo', () => {
     expect(fetchState.calls).toHaveLength(1)
   })
 
+  test('confirmCurrentUpdate falls back to Otalan extra manifest metadata without updateId', async () => {
+    expoState.runtimeVersion = null
+    expoState.updateId = undefined
+    expoState.manifest = createExpoManifest({
+      runtimeVersion: undefined,
+      metadata: {},
+      extra: {
+        otalan: {
+          bundleId: 'bundle-from-extra',
+          runtimeVersion: '2.0.0',
+          releaseNotes: null,
+        },
+      },
+    })
+
+    const { createUpdater } = await loadSdk()
+    const updater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      deviceId: 'device-1',
+    })
+
+    const result = await updater.confirmCurrentUpdate()
+
+    expect(result.confirmed).toBe(true)
+    expect(result.bundleId).toBe('bundle-from-extra')
+    expect(result.runtimeVersion).toBe('2.0.0')
+    expect(readJsonBody(fetchState.calls[0]!)).toMatchObject({
+      bundleId: 'bundle-from-extra',
+      runtimeVersion: '2.0.0',
+    })
+  })
+
+  test('confirmCurrentUpdate skips launched updates without Otalan bundle metadata', async () => {
+    expoState.manifest = createExpoManifest({
+      metadata: {},
+      extra: {},
+    })
+
+    const { createUpdater } = await loadSdk()
+    const updater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      deviceId: 'device-1',
+    })
+
+    const result = await updater.confirmCurrentUpdate()
+
+    expect(result).toMatchObject({
+      confirmed: false,
+      updateId: 'update-1',
+    })
+    expect(result.bundleId).toBeUndefined()
+    expect(fetchState.calls).toHaveLength(0)
+  })
+
   test('confirmCurrentUpdate skips emergency launches', async () => {
     expoState.isEmergencyLaunch = true
 
@@ -317,6 +476,7 @@ describe('@otalan/expo', () => {
       confirmed: false,
       isEmbeddedLaunch: false,
       isEmergencyLaunch: true,
+      bundleId: 'bundle-1',
       runtimeVersion: '1.0.0',
       updateId: 'update-1',
     })
@@ -343,6 +503,32 @@ describe('@otalan/expo', () => {
     expect(fetchState.calls).toHaveLength(1)
   })
 
+  test('confirmCurrentUpdate skips confirmations persisted by a previous updater instance', async () => {
+    const { createUpdater } = await loadSdk()
+    const firstUpdater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      deviceId: 'device-1',
+    })
+
+    await firstUpdater.confirmCurrentUpdate()
+
+    const secondUpdater = createUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      deviceId: 'device-1',
+    })
+
+    const second = await secondUpdater.confirmCurrentUpdate()
+
+    expect(second.confirmed).toBe(true)
+    expect(fetchState.calls).toHaveLength(1)
+  })
+
   test('confirmCurrentUpdate deduplicates concurrent confirmation calls', async () => {
     let resolveConfirm: (response: Response) => void = () => undefined
     const confirmResponse = new Promise<Response>((resolve) => {
@@ -362,8 +548,7 @@ describe('@otalan/expo', () => {
     const first = updater.confirmCurrentUpdate()
     const second = updater.confirmCurrentUpdate()
 
-    await Promise.resolve()
-    expect(fetchState.calls).toHaveLength(1)
+    await waitForFetchCalls(1)
 
     resolveConfirm(Response.json({ ok: true }))
 
@@ -401,10 +586,11 @@ describe('@otalan/expo', () => {
       channel: 'production',
     })
 
-    expect(asyncStorageState.getItemCalls).toEqual(['otalan-device-id'])
-    expect(asyncStorageState.setItemCalls).toHaveLength(1)
-    expect(asyncStorageState.setItemCalls[0]?.key).toBe('otalan-device-id')
-    expect(asyncStorageState.setItemCalls[0]?.value.startsWith('otalan-expo-')).toBe(true)
+    await waitForFetchCalls(1)
+
+    expect(asyncStorageState.getItemCalls).toContain('otalan-device-id')
+    const deviceIdWrite = asyncStorageState.setItemCalls.find(call => call.key === 'otalan-device-id')
+    expect(deviceIdWrite?.value.startsWith('otalan-expo-')).toBe(true)
     expect(await updater.getDeviceId()).toBe(asyncStorageState.storedValue)
     expect(fetchState.calls).toHaveLength(1)
   })
@@ -439,10 +625,12 @@ describe('@otalan/expo', () => {
       deviceIdStorageKey: 'custom-device-key',
     })
 
+    await waitForFetchCalls(1)
+
     expect(await updater.getDeviceId()).toBe('custom-device-1')
     expect(storageCalls.getItem).toEqual(['custom-device-key'])
     expect(storageCalls.setItem).toHaveLength(0)
-    expect(asyncStorageState.getItemCalls).toHaveLength(0)
+    expect(asyncStorageState.getItemCalls).not.toContain('custom-device-key')
     expect(fetchState.calls).toHaveLength(1)
   })
 

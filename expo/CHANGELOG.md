@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.3.0 - 2026-05-22
+
+### Fixed
+
+- Confirm Expo installs with Otalan bundle metadata from the running manifest, sending the required bundle ID, channel, runtime version, platform, and device ID tuple to the current API.
+- Added Otalan API request timeouts for Expo confirmation requests.
+- Switched generated device IDs to `crypto.randomUUID()` or `crypto.getRandomValues()` when available.
+- Surfaced nested API error messages from Expo confirmation responses.
+- Persisted successful install-confirmation tuples so later app starts skip already-confirmed launched updates when AsyncStorage is available.
+
+### Changed
+
+- Added Expo SDK 56 to the official support range.
+- Started startup confirmation in the background so `initializeUpdater()` no longer waits on network work before resolving.
+- Restricted Expo peer dependency ranges to supported Expo SDK 54, 55, and 56 update runtimes.
+
 ## 1.2.1 - 2026-05-21
 
 ### Changed

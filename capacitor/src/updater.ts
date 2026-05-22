@@ -11,6 +11,7 @@ import {
   postJson,
   readStringField,
   requireDeviceId,
+  resolveRequestTimeoutMs,
   resolvePlatform,
   serializeErrorForLog,
 } from './runtime'
@@ -20,7 +21,7 @@ import {
   getNextBundle,
   hasDownloadedBundleSafely,
   readyLiveUpdate,
-  reloadBundle,
+  reloadStagedBundle,
   resolveRuntimeVersion,
   setNextBundle,
 } from './live-update'
@@ -39,12 +40,16 @@ import type {
 
 const DEFAULT_DEVICE_ID_STORAGE_KEY = 'otalan-device-id'
 const TRANSFER_SOURCE_STORAGE_KEY_PREFIX = 'otalan:capacitor:transfer-source:'
+const CONFIRMED_INSTALL_STORAGE_KEY_PREFIX = 'otalan:capacitor:confirmed-install:'
 
 type UpdateCheckContext = {
   appId: string
   platform: OtaPlatform
   runtimeVersion: string
+  allowInsecureBundleUrls?: boolean
 }
+
+type CompatibleCheckField = 'appId' | 'platform' | 'runtimeVersion'
 
 export type InitializedCapacitorUpdater = {
   getDeviceId: () => Promise<string | null>
@@ -119,12 +124,10 @@ export async function initializeUpdater(
     return updaterPromise
   }
 
-  async function sync(trigger: CapacitorSyncTrigger = 'manual') {
-    const updater = await getUpdater()
-    if (!updater) {
-      return null
-    }
-
+  function startSync(
+    trigger: CapacitorSyncTrigger,
+    updater: ReturnType<typeof createUpdater>,
+  ) {
     if (inFlightSync) {
       return inFlightSync
     }
@@ -149,6 +152,15 @@ export async function initializeUpdater(
     return inFlightSync
   }
 
+  async function sync(trigger: CapacitorSyncTrigger = 'manual') {
+    const updater = await getUpdater()
+    if (!updater) {
+      return null
+    }
+
+    return startSync(trigger, updater)
+  }
+
   async function initialize() {
     if (initializePromise) {
       return initializePromise
@@ -171,7 +183,7 @@ export async function initializeUpdater(
         }
       }
 
-      await sync('launch')
+      void startSync('launch', updater)
     })().catch((error) => {
       initializePromise = null
       logger.warn('Otalan initializeUpdater() failed.', serializeErrorForLog(error))
@@ -202,6 +214,8 @@ export async function initializeUpdater(
       deviceId,
       autoConfirm: config.autoConfirm,
       reloadOnSync: config.reloadOnSync,
+      requestTimeoutMs: config.requestTimeoutMs,
+      allowInsecureBundleUrls: config.allowInsecureBundleUrls,
       headers: config.headers,
       logger,
     }
@@ -297,7 +311,8 @@ export function createUpdater(config: CapacitorUpdaterConfig) {
   }
 
   async function check() {
-    return checkForUpdate(config, deviceId)
+    const currentBundle = await getCurrentBundle()
+    return checkForUpdate(config, deviceId, currentBundle.bundleId ?? undefined)
   }
 
   async function sync(): Promise<CapacitorSyncResult> {
@@ -307,7 +322,7 @@ export function createUpdater(config: CapacitorUpdaterConfig) {
 
     const currentBundle = await getCurrentBundle()
     const nextBundle = await getNextBundle()
-    const update = await check()
+    const update = await checkForUpdate(config, deviceId, currentBundle.bundleId ?? undefined)
 
     if (!update.updateAvailable) {
       return { updateAvailable: false }
@@ -322,7 +337,7 @@ export function createUpdater(config: CapacitorUpdaterConfig) {
       rememberTransferSource(config, pendingTransferSources, update.bundleId, transferSource)
 
       if (config.reloadOnSync !== false) {
-        await reloadBundle(update.bundleId)
+        await reloadStagedBundle(update.bundleId)
       }
 
       return buildAppliedResult(config, update, transferSource)
@@ -334,7 +349,7 @@ export function createUpdater(config: CapacitorUpdaterConfig) {
     rememberTransferSource(config, pendingTransferSources, update.bundleId, transferSource)
 
     if (config.reloadOnSync !== false) {
-      await reloadBundle(update.bundleId)
+      await reloadStagedBundle(update.bundleId)
     }
 
     return buildAppliedResult(config, update, transferSource)
@@ -356,12 +371,24 @@ async function confirmInstall(
     transferSource: CapacitorTransferSource
   },
 ) {
-  if (!config.autoConfirm && config.autoConfirm !== undefined) {
+  if (config.autoConfirm === false) {
     return false
   }
 
   const platform = resolvePlatform(config)
   const runtimeVersion = await resolveRuntimeVersion(config)
+  const confirmationStorageKey = buildInstallConfirmationStorageKey({
+    appId: config.appId,
+    platform,
+    channel: config.channel,
+    runtimeVersion,
+    bundleId: input.bundleId,
+    deviceId: input.deviceId,
+  })
+
+  if (readStoredInstallConfirmation(confirmationStorageKey)) {
+    return true
+  }
 
   await postJson(
     joinUrl(config.apiUrl, '/capacitor/confirm'),
@@ -375,13 +402,14 @@ async function confirmInstall(
       transferSource: input.transferSource,
     },
     buildHeaders(config),
+    resolveRequestTimeoutMs(config),
   )
 
+  writeStoredInstallConfirmation(confirmationStorageKey)
   return true
 }
 
-async function checkForUpdate(config: CapacitorUpdaterConfig, deviceId: string) {
-  const currentBundle = await getCurrentBundle()
+async function checkForUpdate(config: CapacitorUpdaterConfig, deviceId: string, currentBundleId?: string) {
   const platform = resolvePlatform(config)
   const runtimeVersion = await resolveRuntimeVersion(config)
   const response = await postJson<unknown>(
@@ -391,16 +419,18 @@ async function checkForUpdate(config: CapacitorUpdaterConfig, deviceId: string) 
       platform,
       channel: config.channel,
       runtimeVersion,
-      currentBundleId: currentBundle.bundleId ?? undefined,
+      currentBundleId,
       deviceId,
     },
     buildHeaders(config),
+    resolveRequestTimeoutMs(config),
   )
 
   return normalizeCheckResponse(response, {
     appId: config.appId,
     platform,
     runtimeVersion,
+    allowInsecureBundleUrls: config.allowInsecureBundleUrls,
   })
 }
 
@@ -418,20 +448,38 @@ function normalizeCheckResponse(response: unknown, context: UpdateCheckContext):
   }
 
   if (!response.updateAvailable) {
-    return response as Extract<OtaCheckResponse, { updateAvailable: false }>
+    return {
+      updateAvailable: false,
+      appId: context.appId,
+      platform: context.platform,
+      runtimeVersion: context.runtimeVersion,
+    }
   }
 
-  const bundleId = readStringField(response, 'bundleId')
-  const downloadUrl = readStringField(response, 'downloadUrl')
+  const bundleId = readRequiredCheckStringField(response, 'bundleId')
+  const downloadUrl = readRequiredCheckStringField(response, 'downloadUrl')
+  const checksum = readRequiredCheckStringField(response, 'checksum')
+  const mandatory = readOptionalCheckBooleanField(response, 'mandatory') ?? false
+  const rolloutPercent = readOptionalCheckNumberField(response, 'rolloutPercent')
+  const releaseNotes = readOptionalCheckNullableStringField(response, 'releaseNotes')
 
-  if (!bundleId || !downloadUrl) {
-    throw new Error('Otalan check response was malformed.')
+  assertTrustedBundleUrl(downloadUrl, context.allowInsecureBundleUrls)
+
+  return {
+    updateAvailable: true,
+    appId: context.appId,
+    platform: context.platform,
+    runtimeVersion: context.runtimeVersion,
+    bundleId,
+    downloadUrl,
+    checksum,
+    mandatory,
+    ...(rolloutPercent !== undefined ? { rolloutPercent } : {}),
+    ...(releaseNotes !== undefined ? { releaseNotes } : {}),
   }
-
-  return response as Extract<OtaCheckResponse, { updateAvailable: true }>
 }
 
-function assertCompatibleCheckField<TField extends keyof UpdateCheckContext>(
+function assertCompatibleCheckField<TField extends CompatibleCheckField>(
   response: Record<string, unknown>,
   context: UpdateCheckContext,
   field: TField,
@@ -453,6 +501,78 @@ function assertCompatibleCheckField<TField extends keyof UpdateCheckContext>(
   }
 }
 
+function readRequiredCheckStringField(response: Record<string, unknown>, field: string) {
+  const value = readStringField(response, field)
+  if (!value) {
+    throw new Error(`Otalan check response field "${field}" is required.`)
+  }
+
+  return value
+}
+
+function readOptionalCheckBooleanField(response: Record<string, unknown>, field: string) {
+  const value = response[field]
+  if (value === undefined || value === null) {
+    return undefined
+  }
+
+  if (typeof value !== 'boolean') {
+    throw new Error(`Otalan check response field "${field}" was malformed.`)
+  }
+
+  return value
+}
+
+function readOptionalCheckNumberField(response: Record<string, unknown>, field: string) {
+  const value = response[field]
+  if (value === undefined || value === null) {
+    return undefined
+  }
+
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`Otalan check response field "${field}" was malformed.`)
+  }
+
+  return value
+}
+
+function readOptionalCheckNullableStringField(response: Record<string, unknown>, field: string) {
+  const value = response[field]
+  if (value === undefined) {
+    return undefined
+  }
+
+  if (value === null || typeof value === 'string') {
+    return value
+  }
+
+  throw new Error(`Otalan check response field "${field}" was malformed.`)
+}
+
+function assertTrustedBundleUrl(downloadUrl: string, allowInsecureBundleUrls?: boolean) {
+  let parsedUrl: URL
+
+  try {
+    parsedUrl = new URL(downloadUrl)
+  } catch {
+    throw new Error('Otalan check response field "downloadUrl" was malformed.')
+  }
+
+  if (parsedUrl.protocol === 'https:') {
+    return
+  }
+
+  if (parsedUrl.protocol === 'http:' && allowInsecureBundleUrls === true) {
+    return
+  }
+
+  if (parsedUrl.protocol === 'http:') {
+    throw new Error('Otalan check response field "downloadUrl" must use HTTPS.')
+  }
+
+  throw new Error(`Otalan check response field "downloadUrl" uses unsupported URL scheme "${parsedUrl.protocol}".`)
+}
+
 function buildAppliedResult(
   config: CapacitorUpdaterConfig,
   check: Extract<OtaCheckResponse, { updateAvailable: true }>,
@@ -462,7 +582,7 @@ function buildAppliedResult(
     updateAvailable: true,
     applied: true,
     bundleId: check.bundleId,
-    mandatory: check.mandatory ?? true,
+    mandatory: check.mandatory,
     transferSource,
     releaseNotes: check.releaseNotes,
     reloadRequired: config.reloadOnSync === false,
@@ -542,6 +662,32 @@ function removeStoredTransferSource(config: CapacitorUpdaterConfig, bundleId: st
   }
 }
 
+function readStoredInstallConfirmation(key: string) {
+  const storage = getTransferSourceStorage()
+  if (!storage) {
+    return false
+  }
+
+  try {
+    return storage.getItem(key) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeStoredInstallConfirmation(key: string) {
+  const storage = getTransferSourceStorage()
+  if (!storage) {
+    return
+  }
+
+  try {
+    storage.setItem(key, '1')
+  } catch {
+    // Backend confirm idempotency still prevents duplicate first-install counts.
+  }
+}
+
 function getTransferSourceStorage() {
   try {
     return globalThis.localStorage
@@ -566,8 +712,22 @@ function getDefaultDeviceIdStorage(): DeviceIdStorage | undefined {
 }
 
 function createDeviceId() {
+  return `otalan-capacitor-${createRandomToken()}`
+}
+
+function createRandomToken() {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID()
+  }
+
+  if (globalThis.crypto?.getRandomValues) {
+    const bytes = new Uint8Array(16)
+    globalThis.crypto.getRandomValues(bytes)
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+  }
+
   const randomPart = Math.random().toString(36).slice(2, 10)
-  return `otalan-capacitor-${Date.now().toString(36)}-${randomPart}`
+  return `${Date.now().toString(36)}-${randomPart}`
 }
 
 async function getOrCreateDeviceId(
@@ -607,6 +767,24 @@ async function resolveDeviceId(config: Pick<
 
 function buildTransferSourceStorageKey(config: Pick<CapacitorUpdaterConfig, 'appId'>, bundleId: string) {
   return `${TRANSFER_SOURCE_STORAGE_KEY_PREFIX}${config.appId}:${bundleId}`
+}
+
+function buildInstallConfirmationStorageKey(input: {
+  appId: string
+  platform: OtaPlatform
+  channel: string
+  runtimeVersion: string
+  bundleId: string
+  deviceId: string
+}) {
+  return `${CONFIRMED_INSTALL_STORAGE_KEY_PREFIX}${[
+    input.appId,
+    input.platform,
+    input.channel,
+    input.runtimeVersion,
+    input.bundleId,
+    input.deviceId,
+  ].map(encodeURIComponent).join(':')}`
 }
 
 function isCapacitorTransferSource(value: string | null): value is CapacitorTransferSource {

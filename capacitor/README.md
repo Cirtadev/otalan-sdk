@@ -41,7 +41,7 @@ Use the matching Capawesome Live Update major for your Capacitor major:
 
 Capacitor 8 is the current upstream major. Capacitor 7 is included for the upstream maintenance window.
 
-The package peer dependencies are intentionally permissive so older Capacitor versions can still install and be evaluated. Older Capacitor versions may work, but they are outside the official support range for the moment. We do not offer support for unsupported combinations and do not take responsibility for issues caused by using them.
+The package peer dependencies warn outside Capacitor and Capawesome Live Update majors 7 and 8. Older Capacitor versions may work with package-manager overrides, but they are outside the official support range for the moment. We do not offer support for unsupported combinations and do not take responsibility for issues caused by using them.
 
 ## Install
 
@@ -232,21 +232,23 @@ When `enabled` is omitted, `initializeUpdater()`:
 - resolves `appId` from `App.getInfo()` unless you provide one
 - creates and persists a stable `deviceId` unless you provide one
 - exposes the resolved `deviceId` through `getDeviceId()`
-- runs one launch sync
+- starts one launch sync in the background
 - can register a resume listener
 - logs device ID storage failures and returns a no-op updater
-- logs resume listener registration failures and still runs launch sync
+- logs resume listener registration failures and still starts launch sync
 - deduplicates concurrent sync calls
 - swallows sync failures and logs warnings instead
 - keeps install confirmation best-effort during sync so a slow confirmation request cannot block the next update check
 
-Pass `enabled: false` to force a no-op. Pass `enabled: true` only when your app has its own runtime/config gate, because it bypasses the default native-platform and required config checks. With `enabled: true`, missing or invalid `apiUrl`, `apiKey`, or `channel` values can produce startup sync warnings instead of the helper silently no-oping.
+Pass `enabled: false` to force a no-op. Pass `enabled: true` only when your app has its own runtime/config gate, because it bypasses the default required config checks. Native iOS and Android platform validation still applies. With `enabled: true`, missing or invalid `apiUrl`, `apiKey`, or `channel` values can produce startup sync warnings instead of the helper silently no-oping.
 
 On a fresh native install, `LiveUpdate.getCurrentBundle()` and `LiveUpdate.getNextBundle()` can both return `null` bundle IDs. That is normal before the device has activated or staged an OTA bundle.
 
 If startup or resume sync logs `[ota] ... sync failed`, the failure happened after the Live Update state checks, usually during an update check or bundle download/staging. The SDK logs a serializable `{ sdkName, sdkVersion, name, message }` error payload so native consoles can show the installed SDK version, HTTP status, API message, plugin operation, or fetch failure instead of an empty `{}`.
 
 If the message says `failed before response`, the request did not receive an HTTP response. Check that `apiUrl` is reachable from the device, uses a trusted certificate, and is allowed by platform HTTP security settings.
+
+`initializeUpdater()` resolves after setup and does not wait for launch sync network work to finish. Call `initialized.sync()` if your app needs to await the current launch sync or run a manual sync later.
 
 ## API
 
@@ -263,6 +265,8 @@ Config:
 - `deviceId`: required stable device ID
 - `autoConfirm`: defaults to `true`
 - `reloadOnSync`: defaults to `true`
+- `requestTimeoutMs`: request timeout for Otalan API calls, defaults to `15000`
+- `allowInsecureBundleUrls`: defaults to `false`; set only for development bundle URLs served over plain HTTP
 - `headers`: optional extra request headers
 - `logger`: optional warning logger
 
@@ -281,7 +285,7 @@ Config:
 - `deviceId`: optional explicit stable device ID override
 - `deviceIdStorage`: optional async storage adapter with `getItem()` and `setItem()`
 - `deviceIdStorageKey`: optional storage key, defaults to `otalan-device-id`
-- `enabled`: optional explicit gate. Omit for default native-platform and required config checks, pass `false` to force-disable, or pass `true` to force initialization and bypass those default checks.
+- `enabled`: optional explicit gate. Omit for default native-platform and required config checks, pass `false` to force-disable, or pass `true` to force initialization and bypass default required config checks. Native platform validation still applies.
 - `onResume`: defaults to `true`
 - `logger`: optional warning and info logger
 
@@ -360,9 +364,9 @@ Returns `Promise<CapacitorSyncResult>`.
 - `runtimeVersion`: compatibility runtime version
 - `updateAvailable`: whether Otalan selected an update
 - `bundleId`: selected bundle ID when an update is available
-- `downloadUrl`: selected bundle URL when an update is available. Treat this value as opaque; downloads may come from immutable CDN URLs.
-- `checksum`: optional bundle checksum. Treat this value as opaque; current Otalan APIs return SHA-256 hex and the SDK passes it through to `LiveUpdate.downloadBundle()` unchanged.
-- `mandatory`: whether the update is mandatory
+- `downloadUrl`: selected HTTPS bundle URL when an update is available. Treat this value as opaque; downloads may come from immutable CDN URLs.
+- `checksum`: required bundle checksum. Treat this value as opaque; current Otalan APIs return SHA-256 hex and the SDK passes it through to `LiveUpdate.downloadBundle()` unchanged.
+- `mandatory`: whether the update is mandatory. Missing values are normalized to `false`.
 - `rolloutPercent`: rollout percentage returned by the API
 - `releaseNotes`: optional release notes
 
@@ -378,7 +382,9 @@ Returns `Promise<CapacitorSyncResult>`.
 
 ## Network Behavior
 
-The SDK sends the OTA App Key with Otalan requests. Update checks include `appId`, `platform`, `channel`, `runtimeVersion`, `currentBundleId` when available, and the stable `deviceId`. Successful check responses must include matching `appId`, `platform`, and `runtimeVersion`; the SDK validates those fields before trusting `updateAvailable` or using any selected bundle. Missing or mismatched compatibility metadata rejects `check()` or `sync()`; `initializeUpdater()` logs the sync failure and leaves the host app running. Install confirmations include the app identifier, platform, channel, runtime version, bundle ID, stable device ID, and `transferSource`.
+The SDK sends the OTA App Key with Otalan requests. Update checks include `appId`, `platform`, `channel`, `runtimeVersion`, `currentBundleId` when available, and the stable `deviceId`. Successful check responses must include matching `appId`, `platform`, `runtimeVersion`, `bundleId`, `downloadUrl`, and `checksum`; the SDK validates those fields before trusting `updateAvailable` or using any selected bundle. Missing or mismatched compatibility metadata rejects `check()` or `sync()`; `initializeUpdater()` logs the sync failure and leaves the host app running. Install confirmations include the app identifier, platform, channel, runtime version, bundle ID, stable device ID, and `transferSource`.
+
+Otalan API requests time out after `requestTimeoutMs`, defaulting to 15 seconds. Bundle downloads are still performed by `@capawesome/capacitor-live-update`, but the SDK only passes HTTPS `downloadUrl` values to the plugin by default. Set `allowInsecureBundleUrls: true` only for local development environments that intentionally serve bundles over plain HTTP.
 
 `transferSource` is either `downloaded` or `cached`. Treat it as advisory client-reported metadata only.
 
@@ -386,10 +392,10 @@ Only active Otalan apps are eligible for OTA checks and install confirmations. I
 
 ## Notes
 
-- repeated confirmation calls for the same installed bundle are skipped after a successful confirmation
+- repeated confirmation calls for the same installed bundle are skipped after a successful confirmation, including later app starts when local storage is available
 - failed confirmation calls are retried on a later `ready()` call
 - experimental transfer source markers are stored until confirmation succeeds so they survive the reload between staging and activation
 - `initializeUpdater()` will create and persist `deviceId` for you unless you override it
 - apps must be active in Otalan to receive updates
 - production API URL is usually `https://api.otalan.com`
-- local development API URL is usually `http://localhost:8787` only when the native runtime can reach that host. Physical devices usually need your machine's LAN IP, Android emulators usually need `10.0.2.2`, and plain HTTP may require platform cleartext/ATS development settings.
+- local development API URL is usually `http://localhost:8787` only when the native runtime can reach that host. Physical devices usually need your machine's LAN IP, Android emulators usually need `10.0.2.2`, and plain HTTP may require platform cleartext/ATS development settings. Plain HTTP bundle URLs additionally require `allowInsecureBundleUrls: true`.

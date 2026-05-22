@@ -14,6 +14,8 @@ type CapacitorHttpPostInput = {
   headers?: Record<string, string>
   data?: unknown
   responseType?: string
+  connectTimeout?: number
+  readTimeout?: number
 }
 
 export const capacitorState = {
@@ -220,6 +222,20 @@ export function buildCompatibleCheckResponse(input: Record<string, unknown> = { 
   }
 }
 
+export async function waitForFetchCalls(count: number) {
+  await waitForCondition(
+    () => fetchState.calls.length >= count,
+    `Expected at least ${count} fetch call(s), received ${fetchState.calls.length}.`,
+  )
+}
+
+export async function waitForWarnCalls(warnCalls: unknown[][], count: number) {
+  await waitForCondition(
+    () => warnCalls.length >= count,
+    `Expected at least ${count} warning call(s), received ${warnCalls.length}.`,
+  )
+}
+
 export function resetCapacitorTestHarness() {
   installMemoryLocalStorage()
 
@@ -272,6 +288,18 @@ export function restoreCapacitorTestHarness() {
   restoreLocalStorage()
   Date.now = originalDateNow
   Math.random = originalMathRandom
+}
+
+async function waitForCondition(condition: () => boolean, message: string) {
+  for (let attempt = 0; attempt < 25; attempt += 1) {
+    if (condition()) {
+      return
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+
+  throw new Error(message)
 }
 
 async function responseToNativeHttpResponse(response: Response, url: string) {

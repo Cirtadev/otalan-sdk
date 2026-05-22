@@ -13,6 +13,8 @@ export const OTALAN_CAPACITOR_SDK_NAME = packageJson.name
 export const OTALAN_CAPACITOR_SDK_VERSION = packageJson.version
 
 export const DEFAULT_TRANSFER_SOURCE: CapacitorTransferSource = 'downloaded'
+export const DEFAULT_REQUEST_TIMEOUT_MS = 15_000
+const MAX_SERIALIZED_CAUSE_DEPTH = 5
 
 export const SDK_LOG_CONTEXT = {
   sdkName: OTALAN_CAPACITOR_SDK_NAME,
@@ -54,12 +56,25 @@ export function buildHeaders(config: CapacitorUpdaterConfig, extra?: HeadersInit
   return headers
 }
 
-export async function postJson<T>(url: string, body: unknown, headers: HeadersInit) {
+export function resolveRequestTimeoutMs(config: Pick<CapacitorUpdaterConfig, 'requestTimeoutMs'>) {
+  return typeof config.requestTimeoutMs === 'number'
+    && Number.isFinite(config.requestTimeoutMs)
+    && config.requestTimeoutMs > 0
+    ? config.requestTimeoutMs
+    : DEFAULT_REQUEST_TIMEOUT_MS
+}
+
+export async function postJson<T>(
+  url: string,
+  body: unknown,
+  headers: HeadersInit,
+  timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+) {
   if (Capacitor.isNativePlatform()) {
-    return postJsonWithCapacitorHttp<T>(url, body, headers)
+    return postJsonWithCapacitorHttp<T>(url, body, headers, timeoutMs)
   }
 
-  return postJsonWithFetch<T>(url, body, headers)
+  return postJsonWithFetch<T>(url, body, headers, timeoutMs)
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -73,6 +88,12 @@ export function readStringField(value: Record<string, unknown>, field: string) {
 
 export function buildRequestFailureError(url: string, error: unknown) {
   return new Error(`POST ${url} failed before response: ${readErrorMessage(error)}`, {
+    cause: error,
+  })
+}
+
+export function buildRequestTimeoutError(url: string, timeoutMs: number, error: unknown) {
+  return new Error(`POST ${url} timed out after ${timeoutMs}ms.`, {
     cause: error,
   })
 }
@@ -93,7 +114,14 @@ export function buildLiveUpdateFailureError(
   return new Error(message, { cause: error })
 }
 
-export function serializeErrorForLog(error: unknown): unknown {
+export function serializeErrorForLog(error: unknown, depth = 0): unknown {
+  if (depth > MAX_SERIALIZED_CAUSE_DEPTH) {
+    return {
+      ...SDK_LOG_CONTEXT,
+      message: 'Error cause depth exceeded.',
+    }
+  }
+
   if (!isRecord(error)) {
     return {
       ...SDK_LOG_CONTEXT,
@@ -104,7 +132,7 @@ export function serializeErrorForLog(error: unknown): unknown {
   const name = error instanceof Error ? error.name : readStringField(error, 'name')
   const message = error instanceof Error ? error.message : readStringField(error, 'message')
   const code = readCodeField(error)
-  const cause = 'cause' in error ? serializeErrorForLog(error.cause) : undefined
+  const cause = 'cause' in error ? serializeErrorForLog(error.cause, depth + 1) : undefined
 
   if (!name && !message && code === undefined && cause === undefined) {
     return {
@@ -138,13 +166,23 @@ function mergeHeaders(...sources: Array<HeadersInit | undefined>) {
   return headers
 }
 
-async function postJsonWithFetch<T>(url: string, body: unknown, headers: HeadersInit) {
+async function postJsonWithFetch<T>(url: string, body: unknown, headers: HeadersInit, timeoutMs: number) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => {
+    controller.abort()
+  }, timeoutMs)
+
   const response = await fetch(url, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
+    signal: controller.signal,
   }).catch((error) => {
-    throw buildRequestFailureError(url, error)
+    throw controller.signal.aborted
+      ? buildRequestTimeoutError(url, timeoutMs, error)
+      : buildRequestFailureError(url, error)
+  }).finally(() => {
+    clearTimeout(timeout)
   })
 
   if (!response.ok) {
@@ -154,21 +192,42 @@ async function postJsonWithFetch<T>(url: string, body: unknown, headers: Headers
   return parseJsonResponse<T>(response)
 }
 
-async function postJsonWithCapacitorHttp<T>(url: string, body: unknown, headers: HeadersInit) {
-  const response = await CapacitorHttp.post({
+async function postJsonWithCapacitorHttp<T>(url: string, body: unknown, headers: HeadersInit, timeoutMs: number) {
+  const response = await withRequestTimeout(
+    CapacitorHttp.post({
+      url,
+      headers: headersToRecord(headers),
+      data: body,
+      responseType: 'json',
+      connectTimeout: timeoutMs,
+      readTimeout: timeoutMs,
+    }).catch((error) => {
+      throw buildRequestFailureError(url, error)
+    }),
     url,
-    headers: headersToRecord(headers),
-    data: body,
-    responseType: 'json',
-  }).catch((error) => {
-    throw buildRequestFailureError(url, error)
-  })
+    timeoutMs,
+  )
 
   if (response.status < 200 || response.status >= 300) {
     throw new Error(buildHttpErrorMessage(url, response.status, readNativeErrorResponseMessage(response)))
   }
 
   return parseNativeJsonResponse<T>(response)
+}
+
+function withRequestTimeout<T>(operation: Promise<T>, url: string, timeoutMs: number) {
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      reject(buildRequestTimeoutError(url, timeoutMs, new Error('timeout')))
+    }, timeoutMs)
+  })
+
+  return Promise.race([operation, timeoutPromise]).finally(() => {
+    if (timeout !== undefined) {
+      clearTimeout(timeout)
+    }
+  })
 }
 
 function headersToRecord(headers: HeadersInit) {

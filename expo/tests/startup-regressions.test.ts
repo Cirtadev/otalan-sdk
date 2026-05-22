@@ -9,10 +9,29 @@ type FetchCall = {
   init?: RequestInit
 }
 
+function createExpoManifest() {
+  return {
+    id: 'update-1',
+    runtimeVersion: '1.0.0',
+    metadata: {
+      bundleId: 'bundle-1',
+      channel: 'production',
+    },
+    extra: {
+      otalan: {
+        bundleId: 'bundle-1',
+        runtimeVersion: '1.0.0',
+        releaseNotes: null,
+      },
+    },
+  }
+}
+
 const asyncStorageState = {
   getItemCalls: [] as string[],
   setItemCalls: [] as Array<{ key: string; value: string }>,
   storedValue: null as string | null,
+  storedItems: new Map<string, string>(),
   setItemError: null as Error | null,
 }
 
@@ -23,6 +42,7 @@ const expoState = {
   isEmergencyLaunch: false,
   runtimeVersion: '1.0.0',
   updateId: 'update-1' as string | undefined,
+  manifest: createExpoManifest(),
 }
 
 const fetchState = {
@@ -43,7 +63,7 @@ function applyModuleMocks() {
     default: {
       getItem: async (key: string) => {
         asyncStorageState.getItemCalls.push(key)
-        return asyncStorageState.storedValue
+        return asyncStorageState.storedItems.get(key) ?? null
       },
       setItem: async (key: string, value: string) => {
         asyncStorageState.setItemCalls.push({ key, value })
@@ -52,7 +72,10 @@ function applyModuleMocks() {
           throw asyncStorageState.setItemError
         }
 
-        asyncStorageState.storedValue = value
+        asyncStorageState.storedItems.set(key, value)
+        if (!key.startsWith('otalan:expo:confirmed-install:')) {
+          asyncStorageState.storedValue = value
+        }
       },
     },
   }))
@@ -69,6 +92,7 @@ function applyModuleMocks() {
     isEmergencyLaunch: expoState.isEmergencyLaunch,
     runtimeVersion: expoState.runtimeVersion,
     updateId: expoState.updateId,
+    manifest: expoState.manifest,
   }))
 }
 
@@ -102,10 +126,23 @@ function readJsonBody(call: FetchCall) {
   return JSON.parse(String(call.init?.body)) as Record<string, unknown>
 }
 
+async function waitForFetchCalls(count: number) {
+  for (let attempt = 0; attempt < 25; attempt += 1) {
+    if (fetchState.calls.length >= count) {
+      return
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+
+  throw new Error(`Expected at least ${count} fetch call(s), received ${fetchState.calls.length}.`)
+}
+
 beforeEach(() => {
   asyncStorageState.getItemCalls = []
   asyncStorageState.setItemCalls = []
   asyncStorageState.storedValue = null
+  asyncStorageState.storedItems = new Map()
   asyncStorageState.setItemError = null
 
   expoState.platformOs = 'ios'
@@ -114,6 +151,7 @@ beforeEach(() => {
   expoState.isEmergencyLaunch = false
   expoState.runtimeVersion = '1.0.0'
   expoState.updateId = 'update-1'
+  expoState.manifest = createExpoManifest()
 
   fetchState.calls = []
   fetchState.handler = async (url: string, init?: RequestInit) => {
@@ -152,8 +190,10 @@ describe('@otalan/expo startup regressions', () => {
       deviceId: 'explicit-device',
     })
 
-    expect(asyncStorageState.getItemCalls).toHaveLength(0)
-    expect(asyncStorageState.setItemCalls).toHaveLength(0)
+    await waitForFetchCalls(1)
+
+    expect(asyncStorageState.getItemCalls).not.toContain('otalan-device-id')
+    expect(asyncStorageState.setItemCalls.map(call => call.key)).not.toContain('otalan-device-id')
     expect(fetchState.calls).toHaveLength(1)
     expect(readJsonBody(fetchState.calls[0]!)).toMatchObject({
       channel: 'production',
