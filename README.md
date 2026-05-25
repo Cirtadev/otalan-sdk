@@ -55,25 +55,41 @@ Both startup helpers start current-bundle confirmation in the background after s
 
 Both package startup helpers can create and persist a stable device ID unless the app provides one. Low-level `createUpdater()` APIs still require an explicit `deviceId`.
 
-Expo apps that use staged rollouts must also send a stable `x-device-id` on update checks, because `@otalan/expo` does not own the `expo-updates` check request. On Android, `expo-updates` only launches cached updates when the update URL and request headers match native config, so do not use a runtime-only SDK-generated device ID as an Expo request header. If `x-device-id` is configured for Expo updates, provide the same build-time value in native `updates.requestHeaders`, `initializeUpdater({ deviceId })`, and any `Updates.setUpdateRequestHeadersOverride()` call.
+Expo apps that use staged rollouts must also send a stable `x-device-id` on update checks, because `@otalan/expo` does not own the `expo-updates` check request. Call `initializeUpdater()` to load or create the SDK-managed device ID, pass that value to `Updates.setUpdateRequestHeadersOverride()`, then call `Updates.checkForUpdateAsync()`. When rollout depends on JS-set headers, use `checkAutomatically: 'NEVER'` and trigger the check from JS after the override is set.
 
 Capacitor checks go through `@otalan/capacitor`, so the SDK sends the resolved ID itself.
 
 ## Basic Usage
 
-Capacitor startup:
+Capacitor sync:
 
 ```ts
-import { initializeUpdater } from '@otalan/capacitor'
+import { initializeUpdater, type InitializedCapacitorUpdater } from '@otalan/capacitor'
 
-const otalan = await initializeUpdater({
-  apiUrl: 'https://api.otalan.com',
-  apiKey: 'otalan_ota_xxx',
-  channel: 'production',
-  onResume: true,
-})
+let updater: InitializedCapacitorUpdater | undefined
 
-const deviceId = await otalan.getDeviceId()
+export async function sync() {
+  if (!updater) {
+    updater = await initializeUpdater({
+      apiUrl: import.meta.env.VITE_OTALAN_API_URL,
+      apiKey: import.meta.env.VITE_OTALAN_APP_KEY,
+      appId: import.meta.env.VITE_OTALAN_APP_ID,
+      channel: import.meta.env.VITE_OTALAN_CHANNEL,
+      runtimeVersion: import.meta.env.VITE_OTALAN_RUNTIME_VERSION || undefined,
+      onResume: true,
+      onDownloadProgress: (event) => {
+        console.log(
+          event.bundleId,
+          event.progress,
+          event.downloadedBytes,
+          event.totalBytes,
+        )
+      },
+    })
+  }
+
+  return updater.sync()
+}
 ```
 
 You can also pass these values from your app's environment variables. For example, keep local values in a `.env` file and read them with the env API provided by your app framework, such as Expo client-exposed env vars (`EXPO_PUBLIC_`) or Vite's `import.meta.env` (`VITE_`). These values are bundled into the mobile client; do not publish or share the OTA App Key outside the app.
@@ -84,36 +100,64 @@ For Expo apps:
 
 ```dotenv
 EXPO_PUBLIC_OTALAN_API_URL=https://api.otalan.com
-EXPO_PUBLIC_OTALAN_API_KEY=otalan_ota_xxx
+EXPO_PUBLIC_OTALAN_APP_KEY=otalan_ota_xxx
 EXPO_PUBLIC_OTALAN_APP_ID=com.example.app
 EXPO_PUBLIC_OTALAN_CHANNEL=production
-# Required only when x-device-id is configured in Expo updates.requestHeaders.
-EXPO_PUBLIC_OTALAN_DEVICE_ID=ota-smoke-com.example.app-android
 ```
 
 For Capacitor apps using Vite:
 
 ```dotenv
 VITE_OTALAN_API_URL=https://api.otalan.com
-VITE_OTALAN_API_KEY=otalan_ota_xxx
+VITE_OTALAN_APP_KEY=otalan_ota_xxx
 VITE_OTALAN_APP_ID=com.example.app
 VITE_OTALAN_CHANNEL=production
 ```
 
-Expo startup:
+Expo update check:
 
 ```ts
-import { initializeUpdater } from '@otalan/expo'
+import { initializeUpdater, type InitializedExpoUpdater } from '@otalan/expo'
+import * as Updates from 'expo-updates'
 
-const otalan = await initializeUpdater({
-  apiUrl: 'https://api.otalan.com',
-  apiKey: 'otalan_ota_xxx',
-  appId: 'com.example.app',
-  channel: 'production',
-  deviceId: process.env.EXPO_PUBLIC_OTALAN_DEVICE_ID || undefined,
-})
+let updater: InitializedExpoUpdater | undefined
 
-const deviceId = await otalan.getDeviceId()
+export async function checkOtalanUpdates() {
+  if (!Updates.isEnabled) {
+    console.warn('expo-updates is disabled.')
+    return false
+  }
+
+  const apiKey = process.env.EXPO_PUBLIC_OTALAN_APP_KEY!
+
+  if (!updater) {
+    updater = await initializeUpdater({
+      apiUrl: process.env.EXPO_PUBLIC_OTALAN_API_URL!,
+      apiKey,
+      appId: process.env.EXPO_PUBLIC_OTALAN_APP_ID!,
+      channel: process.env.EXPO_PUBLIC_OTALAN_CHANNEL!,
+    })
+  }
+
+  const deviceId = await updater.getDeviceId()
+
+  if (!deviceId) {
+    console.error('Failed to get device ID from Otalan updater.')
+    return false
+  }
+
+  // Android requires this exact device id in native updates.requestHeaders.
+  Updates.setUpdateRequestHeadersOverride({ 'x-api-key': apiKey, 'x-device-id': deviceId })
+
+  const update = await Updates.checkForUpdateAsync()
+  if (!update.isAvailable && !update.isRollBackToEmbedded) return false
+
+  const fetchResult = await Updates.fetchUpdateAsync()
+  if (!fetchResult.isNew && !fetchResult.isRollBackToEmbedded) return false
+
+  await Updates.reloadAsync()
+  return true
+}
 ```
 
 ## API Return Summary

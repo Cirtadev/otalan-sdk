@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.1 - 2026-05-25
+
+### Changed
+
+- Updated the README sample to show explicit `initialized.sync()` usage with Vite environment variables and download progress logging.
+
 ## 1.6.0 - 2026-05-25
 
 ### Changed

@@ -83,76 +83,43 @@ const otalan = await initializeUpdater({
 const deviceId = await otalan.getDeviceId()
 ```
 
-## Vue/Vite Example
+## Vite Example
 
-If you want to use environment variables, store your local Otalan values in your app's `.env` file and expose only client-bundled variables, such as `VITE_OTALAN_API_URL`, `VITE_OTALAN_API_KEY`, `VITE_OTALAN_APP_ID`, and `VITE_OTALAN_CHANNEL`.
+If you want to use environment variables, store your local Otalan values in your app's `.env` file and expose only client-bundled variables, such as `VITE_OTALAN_API_URL`, `VITE_OTALAN_APP_KEY`, `VITE_OTALAN_APP_ID`, and `VITE_OTALAN_CHANNEL`.
 
 ```dotenv
 VITE_OTALAN_API_URL=https://api.otalan.com
-VITE_OTALAN_API_KEY=otalan_ota_xxx
+VITE_OTALAN_APP_KEY=otalan_ota_xxx
 VITE_OTALAN_APP_ID=com.example.app
 VITE_OTALAN_CHANNEL=production
 ```
 
 ```ts
-// src/composables/useOtalanUpdates.ts
-import { computed, ref } from 'vue'
 import { initializeUpdater, type InitializedCapacitorUpdater } from '@otalan/capacitor'
 
-let otalanPromise: Promise<InitializedCapacitorUpdater> | null = null
+let updater: InitializedCapacitorUpdater | undefined
 
-function getOtalanUpdater() {
-  otalanPromise ??= initializeUpdater({
-    apiUrl: import.meta.env.VITE_OTALAN_API_URL ?? 'https://api.otalan.com',
-    apiKey: import.meta.env.VITE_OTALAN_API_KEY ?? '',
-    appId: import.meta.env.VITE_OTALAN_APP_ID ?? 'com.example.app',
-    channel: import.meta.env.VITE_OTALAN_CHANNEL ?? 'production',
-    onResume: true,
-  })
-
-  return otalanPromise
-}
-
-export function useOtalanUpdates() {
-  const isSyncing = ref(false)
-  const status = ref<'idle' | 'skipped' | 'syncing' | 'none' | 'applied' | 'failed'>('idle')
-
-  const canSync = computed(() => Boolean(import.meta.env.VITE_OTALAN_API_KEY))
-
-  async function syncUpdates() {
-    if (!canSync.value || isSyncing.value) {
-      status.value = 'skipped'
-      return null
-    }
-
-    isSyncing.value = true
-    status.value = 'syncing'
-
-    try {
-      const otalan = await getOtalanUpdater()
-      const result = await otalan.sync()
-
-      if (!result) {
-        status.value = 'skipped'
-        return null
-      }
-
-      status.value = result.updateAvailable ? 'applied' : 'none'
-      return result
-    } catch {
-      status.value = 'failed'
-      return null
-    } finally {
-      isSyncing.value = false
-    }
+export async function sync() {
+  if (!updater) {
+    updater = await initializeUpdater({
+      apiUrl: import.meta.env.VITE_OTALAN_API_URL,
+      apiKey: import.meta.env.VITE_OTALAN_APP_KEY,
+      appId: import.meta.env.VITE_OTALAN_APP_ID,
+      channel: import.meta.env.VITE_OTALAN_CHANNEL,
+      runtimeVersion: import.meta.env.VITE_OTALAN_RUNTIME_VERSION || undefined,
+      onResume: true,
+      onDownloadProgress: (event) => {
+        console.log(
+          event.bundleId,
+          event.progress,
+          event.downloadedBytes,
+          event.totalBytes,
+        )
+      },
+    })
   }
 
-  return {
-    canSync,
-    isSyncing,
-    status,
-    syncUpdates,
-  }
+  return updater.sync()
 }
 ```
 
