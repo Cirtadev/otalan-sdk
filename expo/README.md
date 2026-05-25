@@ -22,6 +22,7 @@ This package is intentionally small. It does not replace `expo-updates`. Update 
 ## What You Need
 
 - an Expo app using `expo-updates`
+- `expo-application` installed in the app
 - a working Otalan `expo-updates` endpoint
 - an Otalan OTA App Key
 - the release channel used by your Expo update URL
@@ -40,22 +41,28 @@ The package peer dependencies warn outside Expo SDK 54, 55, and 56 update runtim
 
 You do not need Bun to use this package in your app.
 
-Install with any package manager:
+Install the Otalan package with any package manager:
 
 ```bash
-npm install @otalan/expo expo-updates
+npm install @otalan/expo
 ```
 
 ```bash
-pnpm add @otalan/expo expo-updates
+pnpm add @otalan/expo
 ```
 
 ```bash
-yarn add @otalan/expo expo-updates
+yarn add @otalan/expo
 ```
 
 ```bash
-bun add @otalan/expo expo-updates
+bun add @otalan/expo
+```
+
+Install Expo native modules with Expo's installer so their versions match your Expo SDK:
+
+```bash
+npx expo install expo-updates expo-application
 ```
 
 ## Configure `expo-updates`
@@ -181,6 +188,9 @@ export async function checkOtalanUpdates() {
 ## Custom Device ID Storage
 
 By default, `initializeUpdater()` creates and persists a stable `deviceId` with AsyncStorage.
+On Android, it prefers `Application.getAndroidId()` from `expo-application` and stores that value,
+replacing older generated `otalan-expo-*` IDs. On iOS, existing stored IDs remain the source of
+truth, and new installs receive a generated persisted ID unless you provide `deviceId`.
 
 If you want different storage, provide a custom adapter:
 
@@ -287,11 +297,12 @@ When `enabled` is omitted, `initializeUpdater()`:
 - creates the low-level helper
 - starts `ready()` once in the background during startup
 - creates and persists a stable `deviceId` unless you provide one
+- prefers and persists the Android platform ID from `expo-application` when available
 - exposes the resolved `deviceId` through `getDeviceId()`
 - no-ops outside native iOS and Android
 - no-ops when `expo-updates` is disabled
 - no-ops when `apiUrl`, `apiKey`, or `channel` are missing
-- logs device ID storage failures and returns a no-op updater
+- logs device ID storage failures and returns a no-op updater when no explicit or platform ID is available
 - swallows confirmation failures and logs warnings instead
 
 Pass `enabled: false` to force a no-op. Pass `enabled: true` only when your app has its own runtime/config gate, because it bypasses the default `expo-updates` and required config checks. Native iOS and Android platform validation still applies. With `enabled: true`, missing or invalid `apiUrl`, `apiKey`, or `channel` values can produce startup confirmation warnings instead of the helper silently no-oping.

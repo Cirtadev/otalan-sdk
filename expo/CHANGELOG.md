@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.2 - 2026-05-25
+
+### Fixed
+
+- Prefer `Application.getAndroidId()` for Expo Android device IDs and migrate older generated SDK IDs in storage so staged rollout checks and install confirmations use the same device identity. Expo iOS keeps the existing stored SDK ID behavior.
+
 ## 1.4.1 - 2026-05-25
 
 ### Changed

@@ -13,6 +13,10 @@ export type DeviceIdStorage = {
   setItem: (key: string, value: string) => Promise<void>
 }
 
+type ExpoApplicationModule = {
+  getAndroidId?: () => string | null
+}
+
 /** @experimental Advisory client-reported transfer metadata. */
 export type ExpoTransferSource = 'downloaded' | 'cached'
 
@@ -142,7 +146,15 @@ function createRandomToken() {
 async function getOrCreateDeviceId(
   storage: DeviceIdStorage,
   storageKey: string,
+  logger: Pick<Console, 'warn'>,
 ) {
+  const platformDeviceId = await getPlatformDeviceId(logger)
+
+  if (platformDeviceId) {
+    await persistPlatformDeviceId(storage, storageKey, platformDeviceId, logger)
+    return platformDeviceId
+  }
+
   const existing = await storage.getItem(storageKey)
 
   if (existing) {
@@ -152,6 +164,41 @@ async function getOrCreateDeviceId(
   const nextDeviceId = createDeviceId()
   await storage.setItem(storageKey, nextDeviceId)
   return nextDeviceId
+}
+
+async function getPlatformDeviceId(logger: Pick<Console, 'warn'>) {
+  if (Platform.OS !== 'android') {
+    return null
+  }
+
+  try {
+    const application = await import('expo-application') as ExpoApplicationModule
+    return normalizeDeviceId(application.getAndroidId?.())
+  } catch (error) {
+    logger.warn('Otalan Android device ID lookup failed.', serializeErrorForLog(error))
+    return null
+  }
+}
+
+async function persistPlatformDeviceId(
+  storage: DeviceIdStorage,
+  storageKey: string,
+  deviceId: string,
+  logger: Pick<Console, 'warn'>,
+) {
+  try {
+    const existing = await storage.getItem(storageKey)
+
+    if (existing !== deviceId) {
+      await storage.setItem(storageKey, deviceId)
+    }
+  } catch (error) {
+    logger.warn('Otalan Android device ID storage migration failed.', serializeErrorForLog(error))
+  }
+}
+
+function normalizeDeviceId(deviceId: unknown) {
+  return typeof deviceId === 'string' && deviceId.trim() ? deviceId : null
 }
 
 function resolveRequestTimeoutMs(config: Pick<ExpoUpdaterConfig, 'requestTimeoutMs'>) {
@@ -383,6 +430,7 @@ export async function initializeUpdater(
         deviceId = await getOrCreateDeviceId(
           config.deviceIdStorage ?? AsyncStorage,
           config.deviceIdStorageKey ?? DEFAULT_DEVICE_ID_STORAGE_KEY,
+          logger,
         )
       }
 

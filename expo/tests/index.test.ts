@@ -47,6 +47,12 @@ const expoState = {
   manifest: createExpoManifest(),
 }
 
+const applicationState = {
+  androidId: 'android-device-1' as string | null,
+  getAndroidIdCalls: 0,
+  getAndroidIdError: null as Error | null,
+}
+
 const fetchState = {
   calls: [] as FetchCall[],
   handler: async (url: string, init?: RequestInit) => {
@@ -109,6 +115,18 @@ function applyModuleMocks() {
     runtimeVersion: expoState.runtimeVersion,
     updateId: expoState.updateId,
     manifest: expoState.manifest,
+  }))
+
+  mock.module('expo-application', () => ({
+    getAndroidId: () => {
+      applicationState.getAndroidIdCalls += 1
+
+      if (applicationState.getAndroidIdError) {
+        throw applicationState.getAndroidIdError
+      }
+
+      return applicationState.androidId
+    },
   }))
 }
 
@@ -180,6 +198,10 @@ beforeEach(() => {
   expoState.runtimeVersion = '1.0.0'
   expoState.updateId = 'update-1'
   expoState.manifest = createExpoManifest()
+
+  applicationState.androidId = 'android-device-1'
+  applicationState.getAndroidIdCalls = 0
+  applicationState.getAndroidIdError = null
 
   fetchState.calls = []
   fetchState.handler = async (url: string, init?: RequestInit) => {
@@ -592,6 +614,144 @@ describe('@otalan/expo', () => {
     const deviceIdWrite = asyncStorageState.setItemCalls.find(call => call.key === 'otalan-device-id')
     expect(deviceIdWrite?.value.startsWith('otalan-expo-')).toBe(true)
     expect(await updater.getDeviceId()).toBe(asyncStorageState.storedValue)
+    expect(fetchState.calls).toHaveLength(1)
+  })
+
+  test('initializeUpdater keeps an existing stored device id on iOS', async () => {
+    asyncStorageState.storedItems.set('otalan-device-id', 'otalan-expo-old-ios')
+
+    const { initializeUpdater } = await loadSdk()
+    fetchState.handler = async (_url, init) => {
+      expect(readJsonBody({ url: '', init }).deviceId).toBe('otalan-expo-old-ios')
+      return Response.json({ ok: true })
+    }
+
+    const updater = await initializeUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+    })
+
+    await waitForFetchCalls(1)
+
+    expect(await updater.getDeviceId()).toBe('otalan-expo-old-ios')
+    expect(applicationState.getAndroidIdCalls).toBe(0)
+    expect(asyncStorageState.setItemCalls.filter(call => call.key === 'otalan-device-id')).toHaveLength(0)
+    expect(fetchState.calls).toHaveLength(1)
+  })
+
+  test('initializeUpdater migrates stored generated device ids to the Android platform id', async () => {
+    expoState.platformOs = 'android'
+    asyncStorageState.storedItems.set('otalan-device-id', 'otalan-expo-old-android')
+
+    const { initializeUpdater } = await loadSdk()
+    fetchState.handler = async (_url, init) => {
+      expect(readJsonBody({ url: '', init }).deviceId).toBe('android-device-1')
+      return Response.json({ ok: true })
+    }
+
+    const updater = await initializeUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+    })
+
+    await waitForFetchCalls(1)
+
+    expect(await updater.getDeviceId()).toBe('android-device-1')
+    expect(applicationState.getAndroidIdCalls).toBe(1)
+    expect(asyncStorageState.getItemCalls.filter(key => key === 'otalan-device-id')).toEqual(['otalan-device-id'])
+    expect(asyncStorageState.setItemCalls.filter(call => call.key === 'otalan-device-id')).toEqual([
+      { key: 'otalan-device-id', value: 'android-device-1' },
+    ])
+    expect(fetchState.calls).toHaveLength(1)
+  })
+
+  test('initializeUpdater continues with the Android platform id when storage migration fails', async () => {
+    expoState.platformOs = 'android'
+    asyncStorageState.setItemError = new Error('storage write failed')
+
+    const {
+      OTALAN_EXPO_SDK_NAME,
+      OTALAN_EXPO_SDK_VERSION,
+      initializeUpdater,
+    } = await loadSdk()
+    const logger = createLogger()
+
+    fetchState.handler = async (_url, init) => {
+      expect(readJsonBody({ url: '', init }).deviceId).toBe('android-device-1')
+      return Response.json({ ok: true })
+    }
+
+    const updater = await initializeUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      logger: logger.logger,
+    })
+
+    await waitForFetchCalls(1)
+
+    expect(await updater.getDeviceId()).toBe('android-device-1')
+    expect(updater.getUpdater()).not.toBeNull()
+    expect(logger.warnCalls).toEqual([
+      [
+        'Otalan Android device ID storage migration failed.',
+        {
+          sdkName: OTALAN_EXPO_SDK_NAME,
+          sdkVersion: OTALAN_EXPO_SDK_VERSION,
+          name: 'Error',
+          message: 'storage write failed',
+        },
+      ],
+    ])
+    expect(fetchState.calls).toHaveLength(1)
+  })
+
+  test('initializeUpdater falls back to stored device ids when Android platform lookup fails', async () => {
+    expoState.platformOs = 'android'
+    applicationState.getAndroidIdError = new Error('android id unavailable')
+    asyncStorageState.storedItems.set('otalan-device-id', 'otalan-expo-old-android')
+
+    const {
+      OTALAN_EXPO_SDK_NAME,
+      OTALAN_EXPO_SDK_VERSION,
+      initializeUpdater,
+    } = await loadSdk()
+    const logger = createLogger()
+
+    fetchState.handler = async (_url, init) => {
+      expect(readJsonBody({ url: '', init }).deviceId).toBe('otalan-expo-old-android')
+      return Response.json({ ok: true })
+    }
+
+    const updater = await initializeUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      logger: logger.logger,
+    })
+
+    await waitForFetchCalls(1)
+
+    expect(await updater.getDeviceId()).toBe('otalan-expo-old-android')
+    expect(applicationState.getAndroidIdCalls).toBe(1)
+    expect(asyncStorageState.setItemCalls.filter(call => call.key === 'otalan-device-id')).toHaveLength(0)
+    expect(logger.warnCalls).toEqual([
+      [
+        'Otalan Android device ID lookup failed.',
+        {
+          sdkName: OTALAN_EXPO_SDK_NAME,
+          sdkVersion: OTALAN_EXPO_SDK_VERSION,
+          name: 'Error',
+          message: 'android id unavailable',
+        },
+      ],
+    ])
     expect(fetchState.calls).toHaveLength(1)
   })
 

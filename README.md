@@ -53,7 +53,7 @@ Both startup helpers start current-bundle confirmation in the background after s
 
 ## Device IDs
 
-Both package startup helpers can create and persist a stable device ID unless the app provides one. Low-level `createUpdater()` APIs still require an explicit `deviceId`.
+Both package startup helpers can create and persist a stable device ID unless the app provides one. Low-level `createUpdater()` APIs still require an explicit `deviceId`. Expo Android apps prefer `Application.getAndroidId()` from `expo-application` and migrate older generated SDK IDs to that value; Expo iOS apps keep the stored SDK ID.
 
 Expo apps that use staged rollouts must also send a stable `x-device-id` on update checks, because `@otalan/expo` does not own the `expo-updates` check request. Call `initializeUpdater()` to load or create the SDK-managed device ID, pass that value to `Updates.setUpdateRequestHeadersOverride()`, then call `Updates.checkForUpdateAsync()`. When rollout depends on JS-set headers, use `checkAutomatically: 'NEVER'` and trigger the check from JS after the override is set.
 

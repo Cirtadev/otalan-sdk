@@ -1,7 +1,7 @@
 {
   "name": "@otalan/expo",
   "type": "module",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "license": "Apache-2.0",
   "description": "Otalan OTA confirmation helper for Expo apps using expo-updates.",
   "repository": {
@@ -42,7 +42,7 @@
   },
   "scripts": {
     "prebuild": "rm -rf dist",
-    "build": "bun build ./src/index.ts --outfile ./dist/index.js --format esm --target browser --external @react-native-async-storage/async-storage --external expo-updates --external react-native && bun tsc -p ./tsconfig.build.json --emitDeclarationOnly",
+    "build": "bun build ./src/index.ts --outfile ./dist/index.js --format esm --target browser --external @react-native-async-storage/async-storage --external expo-application --external expo-updates --external react-native && bun tsc -p ./tsconfig.build.json --emitDeclarationOnly",
     "prepack": "bun run build",
     "check": "bun tsc -p ./tsconfig.json --noEmit",
     "lint": "eslint src tests",
@@ -54,6 +54,7 @@
   },
   "peerDependencies": {
     "expo": ">=54 <57",
+    "expo-application": ">=7 <57",
     "expo-updates": ">=29 <57",
     "react-native": ">=0.81 <0.86"
   }
