@@ -40,6 +40,19 @@ const expoState = {
   runtimeVersion: '1.0.0' as string | null,
   updateId: 'update-1' as string | undefined,
   manifest: createExpoManifest(),
+  extraParamCalls: [] as Array<{ key: string; value: string | null | undefined }>,
+  requestHeaderOverrideCalls: [] as Array<Record<string, string> | null>,
+  checkCalls: 0,
+  fetchCalls: 0,
+  reloadCalls: 0,
+  checkResult: {
+    isAvailable: true,
+    isRollBackToEmbedded: false,
+  },
+  fetchResult: {
+    isNew: true,
+    isRollBackToEmbedded: false,
+  },
 }
 
 const applicationState = {
@@ -105,6 +118,23 @@ function applyModuleMocks() {
     runtimeVersion: expoState.runtimeVersion,
     updateId: expoState.updateId,
     manifest: expoState.manifest,
+    setExtraParamAsync: async (key: string, value: string | null | undefined) => {
+      expoState.extraParamCalls.push({ key, value })
+    },
+    setUpdateRequestHeadersOverride: (headers: Record<string, string> | null) => {
+      expoState.requestHeaderOverrideCalls.push(headers)
+    },
+    checkForUpdateAsync: async () => {
+      expoState.checkCalls += 1
+      return expoState.checkResult
+    },
+    fetchUpdateAsync: async () => {
+      expoState.fetchCalls += 1
+      return expoState.fetchResult
+    },
+    reloadAsync: async () => {
+      expoState.reloadCalls += 1
+    },
   }))
 
   mock.module('expo-application', () => ({
@@ -179,6 +209,19 @@ beforeEach(() => {
   expoState.runtimeVersion = '1.0.0'
   expoState.updateId = 'update-1'
   expoState.manifest = createExpoManifest()
+  expoState.extraParamCalls = []
+  expoState.requestHeaderOverrideCalls = []
+  expoState.checkCalls = 0
+  expoState.fetchCalls = 0
+  expoState.reloadCalls = 0
+  expoState.checkResult = {
+    isAvailable: true,
+    isRollBackToEmbedded: false,
+  }
+  expoState.fetchResult = {
+    isNew: true,
+    isRollBackToEmbedded: false,
+  }
 
   applicationState.androidId = 'android-device-1'
   applicationState.iosId = null
@@ -693,5 +736,91 @@ describe('@otalan/expo device id resolver', () => {
       { key: 'custom-device-key', value: 'android-device-1' },
     ])
     expect(fetchState.calls).toHaveLength(1)
+  })
+
+  test('sync sends the Android platform id through Expo extra params when storage has an old id', async () => {
+    expoState.platformOs = 'android'
+    expoState.isEmbeddedLaunch = true
+    asyncStorageState.storedItems.set('otalan-device-id', 'otalan-expo-old-android')
+
+    const {
+      OTALAN_EXPO_DEVICE_ID_EXTRA_PARAM_KEY,
+      initializeUpdater,
+    } = await loadSdk()
+
+    const updater = await initializeUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+    })
+
+    await expect(updater.sync()).resolves.toBe(true)
+
+    expect(await updater.getDeviceId()).toBe('android-device-1')
+    expect(expoState.extraParamCalls).toEqual([
+      { key: OTALAN_EXPO_DEVICE_ID_EXTRA_PARAM_KEY, value: 'android-device-1' },
+    ])
+    expect(expoState.requestHeaderOverrideCalls).toEqual([
+      { 'x-api-key': 'otalan_ota_xxx' },
+    ])
+    expect(expoState.requestHeaderOverrideCalls[0]).not.toHaveProperty('x-device-id')
+    expect(expoState.checkCalls).toBe(1)
+    expect(expoState.fetchCalls).toBe(1)
+    expect(expoState.reloadCalls).toBe(1)
+  })
+
+  test('sync uses an explicit device id before platform and storage ids', async () => {
+    expoState.platformOs = 'android'
+    expoState.isEmbeddedLaunch = true
+    asyncStorageState.storedItems.set('otalan-device-id', 'stale-storage-device')
+
+    const {
+      OTALAN_EXPO_DEVICE_ID_EXTRA_PARAM_KEY,
+      initializeUpdater,
+    } = await loadSdk()
+
+    const updater = await initializeUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      deviceId: 'explicit-device',
+    })
+
+    await expect(updater.sync()).resolves.toBe(true)
+
+    expect(await updater.getDeviceId()).toBe('explicit-device')
+    expect(applicationState.getAndroidIdCalls).toBe(0)
+    expect(asyncStorageState.getItemCalls).not.toContain('otalan-device-id')
+    expect(expoState.extraParamCalls).toEqual([
+      { key: OTALAN_EXPO_DEVICE_ID_EXTRA_PARAM_KEY, value: 'explicit-device' },
+    ])
+  })
+
+  test('sync sends the stored iOS id when the vendor id is unavailable', async () => {
+    expoState.isEmbeddedLaunch = true
+    asyncStorageState.storedItems.set('otalan-device-id', 'otalan-expo-old-ios')
+
+    const {
+      OTALAN_EXPO_DEVICE_ID_EXTRA_PARAM_KEY,
+      initializeUpdater,
+    } = await loadSdk()
+
+    const updater = await initializeUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+    })
+
+    await expect(updater.sync()).resolves.toBe(true)
+
+    expect(await updater.getDeviceId()).toBe('otalan-expo-old-ios')
+    expect(applicationState.getIosIdForVendorCalls).toBe(1)
+    expect(asyncStorageState.setItemCalls.filter(call => call.key === 'otalan-device-id')).toHaveLength(0)
+    expect(expoState.extraParamCalls).toEqual([
+      { key: OTALAN_EXPO_DEVICE_ID_EXTRA_PARAM_KEY, value: 'otalan-expo-old-ios' },
+    ])
   })
 })

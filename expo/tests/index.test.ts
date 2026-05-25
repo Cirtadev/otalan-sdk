@@ -45,6 +45,22 @@ const expoState = {
   runtimeVersion: '1.0.0' as string | null,
   updateId: 'update-1' as string | undefined,
   manifest: createExpoManifest(),
+  extraParamCalls: [] as Array<{ key: string; value: string | null | undefined }>,
+  extraParamError: null as Error | null,
+  requestHeaderOverrideCalls: [] as Array<Record<string, string> | null>,
+  requestHeaderOverrideError: null as Error | null,
+  checkCalls: 0,
+  fetchCalls: 0,
+  reloadCalls: 0,
+  checkError: null as Error | null,
+  checkResult: {
+    isAvailable: true,
+    isRollBackToEmbedded: false,
+  },
+  fetchResult: {
+    isNew: true,
+    isRollBackToEmbedded: false,
+  },
 }
 
 const fetchState = {
@@ -109,6 +125,36 @@ function applyModuleMocks() {
     runtimeVersion: expoState.runtimeVersion,
     updateId: expoState.updateId,
     manifest: expoState.manifest,
+    setExtraParamAsync: async (key: string, value: string | null | undefined) => {
+      expoState.extraParamCalls.push({ key, value })
+
+      if (expoState.extraParamError) {
+        throw expoState.extraParamError
+      }
+    },
+    setUpdateRequestHeadersOverride: (headers: Record<string, string> | null) => {
+      expoState.requestHeaderOverrideCalls.push(headers)
+
+      if (expoState.requestHeaderOverrideError) {
+        throw expoState.requestHeaderOverrideError
+      }
+    },
+    checkForUpdateAsync: async () => {
+      expoState.checkCalls += 1
+
+      if (expoState.checkError) {
+        throw expoState.checkError
+      }
+
+      return expoState.checkResult
+    },
+    fetchUpdateAsync: async () => {
+      expoState.fetchCalls += 1
+      return expoState.fetchResult
+    },
+    reloadAsync: async () => {
+      expoState.reloadCalls += 1
+    },
   }))
 
   mock.module('expo-application', () => ({
@@ -141,6 +187,26 @@ function createLogger() {
         warnCalls.push(args)
       },
     },
+  }
+}
+
+function createExpectedExpoSyncLogContext(
+  sdkName: string,
+  sdkVersion: string,
+  extra: Record<string, unknown>,
+) {
+  return {
+    sdkName,
+    sdkVersion,
+    platform: expoState.platformOs,
+    expoUpdates: {
+      isEnabled: expoState.isEnabled,
+      isEmbeddedLaunch: expoState.isEmbeddedLaunch,
+      isEmergencyLaunch: expoState.isEmergencyLaunch,
+      runtimeVersion: expoState.runtimeVersion,
+      updateId: expoState.updateId,
+    },
+    ...extra,
   }
 }
 
@@ -185,6 +251,22 @@ beforeEach(() => {
   expoState.runtimeVersion = '1.0.0'
   expoState.updateId = 'update-1'
   expoState.manifest = createExpoManifest()
+  expoState.extraParamCalls = []
+  expoState.extraParamError = null
+  expoState.requestHeaderOverrideCalls = []
+  expoState.requestHeaderOverrideError = null
+  expoState.checkCalls = 0
+  expoState.fetchCalls = 0
+  expoState.reloadCalls = 0
+  expoState.checkError = null
+  expoState.checkResult = {
+    isAvailable: true,
+    isRollBackToEmbedded: false,
+  }
+  expoState.fetchResult = {
+    isNew: true,
+    isRollBackToEmbedded: false,
+  }
 
   fetchState.calls = []
   fetchState.handler = async (url: string, init?: RequestInit) => {
@@ -568,37 +650,291 @@ describe('@otalan/expo', () => {
     expect(fetchState.calls).toHaveLength(1)
   })
 
+  test('initialized sync sets Otalan update request context internally and reloads fetched updates', async () => {
+    expoState.isEmbeddedLaunch = true
+
+    const {
+      OTALAN_EXPO_DEVICE_ID_EXTRA_PARAM_KEY,
+      initializeUpdater,
+    } = await loadSdk()
+
+    const updater = await initializeUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+    })
+    const deviceId = await updater.getDeviceId()
+
+    await expect(updater.sync()).resolves.toBe(true)
+
+    expect(expoState.extraParamCalls).toEqual([
+      { key: OTALAN_EXPO_DEVICE_ID_EXTRA_PARAM_KEY, value: deviceId },
+    ])
+    expect(expoState.requestHeaderOverrideCalls).toEqual([
+      { 'x-api-key': 'otalan_ota_xxx' },
+    ])
+    expect(expoState.requestHeaderOverrideCalls[0]).not.toHaveProperty('x-device-id')
+    expect(expoState.checkCalls).toBe(1)
+    expect(expoState.fetchCalls).toBe(1)
+    expect(expoState.reloadCalls).toBe(1)
+  })
+
+  test('initialized sync returns false without fetching when no update is available', async () => {
+    expoState.isEmbeddedLaunch = true
+    expoState.checkResult = {
+      isAvailable: false,
+      isRollBackToEmbedded: false,
+    }
+
+    const {
+      OTALAN_EXPO_SDK_NAME,
+      OTALAN_EXPO_SDK_VERSION,
+      initializeUpdater,
+    } = await loadSdk()
+    const logger = createLogger()
+    const updater = await initializeUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      logger: logger.logger,
+    })
+
+    await expect(updater.sync()).resolves.toBe(false)
+
+    expect(logger.warnCalls).toEqual([
+      [
+        'Otalan Expo sync found no available update.',
+        createExpectedExpoSyncLogContext(OTALAN_EXPO_SDK_NAME, OTALAN_EXPO_SDK_VERSION, {
+          update: {
+            isAvailable: false,
+            isRollBackToEmbedded: false,
+          },
+        }),
+      ],
+    ])
+    expect(expoState.checkCalls).toBe(1)
+    expect(expoState.fetchCalls).toBe(0)
+    expect(expoState.reloadCalls).toBe(0)
+  })
+
+  test('initialized sync logs when fetch returns no new update', async () => {
+    expoState.isEmbeddedLaunch = true
+    expoState.fetchResult = {
+      isNew: false,
+      isRollBackToEmbedded: false,
+    }
+
+    const {
+      OTALAN_EXPO_SDK_NAME,
+      OTALAN_EXPO_SDK_VERSION,
+      initializeUpdater,
+    } = await loadSdk()
+    const logger = createLogger()
+    const updater = await initializeUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      logger: logger.logger,
+    })
+
+    await expect(updater.sync()).resolves.toBe(false)
+
+    expect(logger.warnCalls).toEqual([
+      [
+        'Otalan Expo sync fetch returned no new update.',
+        createExpectedExpoSyncLogContext(OTALAN_EXPO_SDK_NAME, OTALAN_EXPO_SDK_VERSION, {
+          fetchResult: {
+            isNew: false,
+            isRollBackToEmbedded: false,
+          },
+        }),
+      ],
+    ])
+    expect(expoState.checkCalls).toBe(1)
+    expect(expoState.fetchCalls).toBe(1)
+    expect(expoState.reloadCalls).toBe(0)
+  })
+
+  test('initialized sync continues when Expo update extra params are unavailable', async () => {
+    expoState.isEmbeddedLaunch = true
+    expoState.extraParamError = new Error('extra params unavailable')
+
+    const {
+      OTALAN_EXPO_SDK_NAME,
+      OTALAN_EXPO_SDK_VERSION,
+      initializeUpdater,
+    } = await loadSdk()
+    const logger = createLogger()
+    const updater = await initializeUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      logger: logger.logger,
+    })
+
+    await expect(updater.sync()).resolves.toBe(true)
+
+    expect(logger.warnCalls).toEqual([
+      [
+        'Otalan Expo update device ID extra param failed.',
+        {
+          sdkName: OTALAN_EXPO_SDK_NAME,
+          sdkVersion: OTALAN_EXPO_SDK_VERSION,
+          name: 'Error',
+          message: 'extra params unavailable',
+        },
+      ],
+    ])
+    expect(expoState.checkCalls).toBe(1)
+    expect(expoState.fetchCalls).toBe(1)
+    expect(expoState.reloadCalls).toBe(1)
+  })
+
+  test('initialized sync continues when Expo update header override is unavailable', async () => {
+    expoState.isEmbeddedLaunch = true
+    expoState.requestHeaderOverrideError = new Error('request headers unavailable')
+
+    const {
+      OTALAN_EXPO_SDK_NAME,
+      OTALAN_EXPO_SDK_VERSION,
+      initializeUpdater,
+    } = await loadSdk()
+    const logger = createLogger()
+    const updater = await initializeUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      logger: logger.logger,
+    })
+
+    await expect(updater.sync()).resolves.toBe(true)
+
+    expect(logger.warnCalls).toEqual([
+      [
+        'Otalan Expo update request header override failed.',
+        {
+          sdkName: OTALAN_EXPO_SDK_NAME,
+          sdkVersion: OTALAN_EXPO_SDK_VERSION,
+          name: 'Error',
+          message: 'request headers unavailable',
+        },
+      ],
+    ])
+    expect(expoState.requestHeaderOverrideCalls).toEqual([
+      { 'x-api-key': 'otalan_ota_xxx' },
+    ])
+    expect(expoState.checkCalls).toBe(1)
+    expect(expoState.fetchCalls).toBe(1)
+    expect(expoState.reloadCalls).toBe(1)
+  })
+
+  test('initialized sync logs Expo update failures and returns false', async () => {
+    expoState.isEmbeddedLaunch = true
+    expoState.checkError = new Error('check failed')
+
+    const {
+      OTALAN_EXPO_SDK_NAME,
+      OTALAN_EXPO_SDK_VERSION,
+      initializeUpdater,
+    } = await loadSdk()
+    const logger = createLogger()
+    const updater = await initializeUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      logger: logger.logger,
+    })
+
+    await expect(updater.sync()).resolves.toBe(false)
+
+    expect(logger.warnCalls).toEqual([
+      [
+        'Otalan Expo sync failed.',
+        createExpectedExpoSyncLogContext(OTALAN_EXPO_SDK_NAME, OTALAN_EXPO_SDK_VERSION, {
+          error: {
+            sdkName: OTALAN_EXPO_SDK_NAME,
+            sdkVersion: OTALAN_EXPO_SDK_VERSION,
+            name: 'Error',
+            message: 'check failed',
+          },
+        }),
+      ],
+    ])
+    expect(expoState.fetchCalls).toBe(0)
+    expect(expoState.reloadCalls).toBe(0)
+  })
+
   test('initializeUpdater no-ops when required config is empty', async () => {
-    const { initializeUpdater } = await loadSdk()
+    const {
+      OTALAN_EXPO_SDK_NAME,
+      OTALAN_EXPO_SDK_VERSION,
+      initializeUpdater,
+    } = await loadSdk()
+    const logger = createLogger()
 
     const updater = await initializeUpdater({
       apiUrl: '',
       apiKey: 'otalan_ota_xxx',
       appId: 'com.example.app',
       channel: 'production',
+      logger: logger.logger,
     })
 
     expect(updater.getUpdater()).toBeNull()
     expect(await updater.getDeviceId()).toBeNull()
     expect(await updater.ready()).toBeNull()
+    expect(await updater.sync()).toBe(false)
+    expect(logger.warnCalls).toEqual([
+      [
+        'Otalan Expo sync skipped.',
+        createExpectedExpoSyncLogContext(OTALAN_EXPO_SDK_NAME, OTALAN_EXPO_SDK_VERSION, {
+          reason: 'missing-api-url',
+          hasDeviceId: false,
+          hasUpdater: false,
+        }),
+      ],
+    ])
     expect(asyncStorageState.getItemCalls).toHaveLength(0)
     expect(asyncStorageState.setItemCalls).toHaveLength(0)
     expect(fetchState.calls).toHaveLength(0)
   })
 
   test('initializeUpdater no-ops when required channel is empty', async () => {
-    const { initializeUpdater } = await loadSdk()
+    const {
+      OTALAN_EXPO_SDK_NAME,
+      OTALAN_EXPO_SDK_VERSION,
+      initializeUpdater,
+    } = await loadSdk()
+    const logger = createLogger()
 
     const updater = await initializeUpdater({
       apiUrl: 'https://api.otalan.com',
       apiKey: 'otalan_ota_xxx',
       appId: 'com.example.app',
       channel: '',
+      logger: logger.logger,
     })
 
     expect(updater.getUpdater()).toBeNull()
     expect(await updater.getDeviceId()).toBeNull()
     expect(await updater.ready()).toBeNull()
+    expect(await updater.sync()).toBe(false)
+    expect(logger.warnCalls).toEqual([
+      [
+        'Otalan Expo sync skipped.',
+        createExpectedExpoSyncLogContext(OTALAN_EXPO_SDK_NAME, OTALAN_EXPO_SDK_VERSION, {
+          reason: 'missing-channel',
+          hasDeviceId: false,
+          hasUpdater: false,
+        }),
+      ],
+    ])
     expect(asyncStorageState.getItemCalls).toHaveLength(0)
     expect(fetchState.calls).toHaveLength(0)
   })
@@ -624,6 +960,7 @@ describe('@otalan/expo', () => {
     expect(updater.getUpdater()).toBeNull()
     expect(await updater.getDeviceId()).toBeNull()
     expect(await updater.ready()).toBeNull()
+    expect(await updater.sync()).toBe(false)
     expect(fetchState.calls).toHaveLength(0)
     expect(logger.warnCalls).toEqual([
       [
@@ -634,6 +971,14 @@ describe('@otalan/expo', () => {
           name: 'Error',
           message: 'storage unavailable',
         },
+      ],
+      [
+        'Otalan Expo sync skipped.',
+        createExpectedExpoSyncLogContext(OTALAN_EXPO_SDK_NAME, OTALAN_EXPO_SDK_VERSION, {
+          reason: 'missing-device-id',
+          hasDeviceId: false,
+          hasUpdater: false,
+        }),
       ],
     ])
   })

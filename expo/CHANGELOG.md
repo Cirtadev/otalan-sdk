@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.5.0 - 2026-05-25
+
+### Added
+
+- Added `initialized.sync()` for Expo apps so `@otalan/expo` owns the `expo-updates` check, fetch, and reload flow.
+- Logged compact `expo-updates` state when `initialized.sync()` returns `false`.
+
+### Fixed
+
+- Moved Expo rollout device identity out of app code by writing the resolved SDK device ID to Expo update extra params as `otalan-device-id` before update checks.
+- Stopped documenting dynamic `x-device-id` request-header overrides for Expo update checks.
+
 ## 1.4.3 - 2026-05-25
 
 ### Fixed

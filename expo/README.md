@@ -8,14 +8,12 @@ This package is intentionally small. It does not replace `expo-updates`. Update 
 
 - exposes `initializeUpdater()` for app startup
 - reads the currently running Expo update metadata
+- exposes `initialized.sync()` for manual check, fetch, and reload
 - confirms eligible launched OTA updates with advisory transfer source metadata
 - sends the OTA App Key through the `x-api-key` header on that confirm request
 
 ## What This Package Does Not Do
 
-- it does not call the Expo update manifest endpoint
-- it does not fetch updates
-- it does not reload updates
 - it does not decide rollout eligibility
 - it does not replace `expo-updates`
 
@@ -90,9 +88,9 @@ Example `app.json` or `app.config.json`:
 
 Your configured update service is still responsible for manifest responses and asset URLs. Manifests can include direct immutable CDN asset URLs.
 
-`expo-updates` and the configured Otalan manifest endpoint own update selection and runtime compatibility. This helper observes the already launched update metadata and confirms it with the Otalan bundle ID from the manifest; it does not fetch, stage, or independently verify Expo manifest compatibility.
+`expo-updates` and the configured Otalan manifest endpoint own update selection and runtime compatibility. This helper can run the manual `expo-updates` check/fetch/reload flow through `initialized.sync()`, observes the already launched update metadata, and confirms it with the Otalan bundle ID from the manifest.
 
-Use `checkAutomatically` with an active update policy such as `ON_LOAD` or `WIFI_ONLY` when rollout selection does not depend on JS-set runtime headers. When rollout depends on `x-device-id`, set `checkAutomatically` to `NEVER`, initialize Otalan from JS, set the Expo request header override, then call `Updates.checkForUpdateAsync()`.
+Use `checkAutomatically` with an active update policy such as `ON_LOAD` or `WIFI_ONLY` only when rollout selection does not depend on SDK-managed runtime metadata. For Otalan staged rollouts, set `checkAutomatically` to `NEVER` and call `initialized.sync()` from JS so `@otalan/expo` can attach the resolved device ID before the update check.
 
 Otalan protects Expo update checks with the OTA App Key. Include `x-api-key` or `authorization` on update checks so the manifest endpoint can authenticate the request and apply rollout and quota rules.
 
@@ -100,11 +98,11 @@ The OTA App Key can be embedded in mobile JS/TS bundles for update checks and in
 
 OTA Publish Key values use the `otalan_ci_...` token format and are for release automation only. Do not use OTA Publish Keys in app code.
 
-Partial rollouts for Expo require a stable `x-device-id` header on update checks. `@otalan/expo` creates and persists that ID, but `expo-updates` owns the manifest request, so your app must pass the ID to `Updates.setUpdateRequestHeadersOverride()` before checking for updates.
+Partial rollouts for Expo require a stable device ID on Otalan update checks. `@otalan/expo` creates and persists that ID, then writes it to Expo update extra params as `otalan-device-id` before checking for updates. App code does not need to know or set an Otalan device header.
 
-If you use `Updates.setUpdateRequestHeadersOverride()`, Expo requires every runtime-overridden header to already be declared in `updates.requestHeaders` in native config.
+`initialized.sync()` sets the OTA App Key request header before checking for updates. Expo requires runtime-overridden header keys to already be declared in `updates.requestHeaders` in native config.
 
-Set `checkAutomatically` to `NEVER` for device-targeted rollouts that call `Updates.setUpdateRequestHeadersOverride()` from JS. `ON_LOAD` runs from the native update startup flow before app JS can initialize Otalan and set the override.
+Set `checkAutomatically` to `NEVER` for device-targeted rollouts. `ON_LOAD` runs from the native update startup flow before app JS can initialize Otalan and attach the rollout device metadata.
 
 Minimal JS-driven staged-rollout config:
 
@@ -114,7 +112,6 @@ export default {
     updates: {
       requestHeaders: {
         'x-api-key': process.env.EXPO_PUBLIC_OTALAN_APP_KEY ?? '',
-        'x-device-id': '',
       },
       checkAutomatically: 'NEVER',
     },
@@ -143,16 +140,10 @@ const deviceId = await otalan.getDeviceId()
 
 ```ts
 import { initializeUpdater, type InitializedExpoUpdater } from '@otalan/expo'
-import * as Updates from 'expo-updates'
 
 let updater: InitializedExpoUpdater | undefined
 
 export async function checkOtalanUpdates() {
-  if (!Updates.isEnabled) {
-    console.warn('expo-updates is disabled.')
-    return false
-  }
-
   const apiKey = process.env.EXPO_PUBLIC_OTALAN_APP_KEY!
 
   if (!updater) {
@@ -164,24 +155,7 @@ export async function checkOtalanUpdates() {
     })
   }
 
-  const deviceId = await updater.getDeviceId()
-
-  if (!deviceId) {
-    console.error('Failed to get device ID from Otalan updater.')
-    return false
-  }
-
-  // Android requires this exact device id in native updates.requestHeaders.
-  Updates.setUpdateRequestHeadersOverride({ 'x-api-key': apiKey, 'x-device-id': deviceId })
-
-  const update = await Updates.checkForUpdateAsync()
-  if (!update.isAvailable && !update.isRollBackToEmbedded) return false
-
-  const fetchResult = await Updates.fetchUpdateAsync()
-  if (!fetchResult.isNew && !fetchResult.isRollBackToEmbedded) return false
-
-  await Updates.reloadAsync()
-  return true
+  return updater.sync()
 }
 ```
 
@@ -213,7 +187,7 @@ await initializeUpdater({
 
 ## Staged Rollout Example
 
-Use this shape when the rollout decision depends on `x-device-id`.
+Use this shape when the rollout decision depends on the SDK-managed device ID.
 
 Declare the runtime-overridden header keys in native config before building the app:
 
@@ -226,7 +200,6 @@ export default {
       url: 'https://api.otalan.com/expo/updates?appId=com.example.app&channel=production',
       requestHeaders: {
         'x-api-key': process.env.EXPO_PUBLIC_OTALAN_APP_KEY ?? '',
-        'x-device-id': '',
       },
       checkAutomatically: 'NEVER',
     },
@@ -234,19 +207,16 @@ export default {
 }
 ```
 
-The `x-device-id` value is filled at runtime by the JS update check after `initializeUpdater()` loads or creates the SDK-managed device ID.
+`@otalan/expo` writes the resolved device ID to Expo update extra params at runtime before checking for updates.
 
-Use the resolved value at runtime:
+Run the SDK-owned sync at runtime:
 
 ```ts
 import { initializeUpdater, type InitializedExpoUpdater } from '@otalan/expo'
-import * as Updates from 'expo-updates'
 
 let updater: InitializedExpoUpdater | undefined
 
 export async function checkOtalanUpdates() {
-  if (!Updates.isEnabled) return false
-
   const apiKey = process.env.EXPO_PUBLIC_OTALAN_APP_KEY!
 
   if (!updater) {
@@ -258,36 +228,25 @@ export async function checkOtalanUpdates() {
     })
   }
 
-  const deviceId = await updater.getDeviceId()
-  if (!deviceId) return false
-
-  Updates.setUpdateRequestHeadersOverride({ 'x-api-key': apiKey, 'x-device-id': deviceId })
-  return Updates.checkForUpdateAsync()
+  return updater.sync()
 }
 ```
 
-`checkAutomatically: "NEVER"` is intentional when JS calls `Updates.setUpdateRequestHeadersOverride()` before `Updates.checkForUpdateAsync()`.
+`checkAutomatically: "NEVER"` is intentional when JS calls `initialized.sync()` so the Otalan SDK can attach rollout metadata before `expo-updates` checks the server.
 
 ## Update Flow
 
-Use `expo-updates` directly for check, fetch, and reload:
+Use `initialized.sync()` for check, fetch, and reload:
 
 ```ts
-import * as Updates from 'expo-updates'
-
-const update = await Updates.checkForUpdateAsync()
-
-if (update.isAvailable) {
-  await Updates.fetchUpdateAsync()
-  await Updates.reloadAsync()
-}
+const didReload = await updater.sync()
 ```
 
-`@otalan/expo` imports `expo-updates`, but it only reads launch metadata such as `Updates.isEnabled`, `Updates.manifest`, `Updates.isEmbeddedLaunch`, `Updates.isEmergencyLaunch`, `Updates.runtimeVersion`, and `Updates.updateId`. It does not call `Updates.checkForUpdateAsync()`, `Updates.fetchUpdateAsync()`, or `Updates.reloadAsync()`.
+`@otalan/expo` imports `expo-updates` to read launch metadata such as `Updates.isEnabled`, `Updates.manifest`, `Updates.isEmbeddedLaunch`, `Updates.isEmergencyLaunch`, `Updates.runtimeVersion`, and `Updates.updateId`. The initialized helper's `sync()` method also calls `Updates.checkForUpdateAsync()`, `Updates.fetchUpdateAsync()`, and `Updates.reloadAsync()` after attaching Otalan request context.
 
-Unlike `@otalan/capacitor`, `@otalan/expo` does not expose an Otalan `onDownloadProgress` callback because this helper does not own the update download. For Expo download UI, listen to `expo-updates` download state directly. In React components, `useUpdates().downloadProgress` reports progress from `0` to `1` while `useUpdates().isDownloading` is true.
+Unlike `@otalan/capacitor`, `@otalan/expo` does not expose an Otalan `onDownloadProgress` callback because the download is still owned by `expo-updates`. For Expo download UI, listen to `expo-updates` download state directly. In React components, `useUpdates().downloadProgress` reports progress from `0` to `1` while `useUpdates().isDownloading` is true.
 
-The helper does not fetch or stage Expo updates itself, so it cannot reliably prove whether the Expo runtime loaded a cached update or a freshly downloaded one. `@otalan/expo` sends `transferSource: "downloaded"` by default on confirmation, but this field is advisory client-reported metadata.
+The helper delegates fetching and staging to `expo-updates`, so it cannot reliably prove whether the Expo runtime loaded a cached update or a freshly downloaded one. `@otalan/expo` sends `transferSource: "downloaded"` by default on confirmation, but this field is advisory client-reported metadata.
 
 Unlike `@otalan/capacitor`, this package does not report `cached` confirmations. The Capacitor SDK controls the bundle download/staging flow and can ask the live-update plugin whether a bundle already exists on the device. The Expo helper only observes the currently launched update through `expo-updates`, so it cannot distinguish a cached launch from a freshly downloaded launch with enough confidence.
 
@@ -350,6 +309,7 @@ Returns:
 - `getDeviceId()`: resolves the stable device ID or `null` when no updater is enabled and no explicit ID was provided
 - `getUpdater()`: returns the helper or `null`
 - `ready()`: awaits the startup confirmation helper and returns `ExpoReadyResult | null`
+- `sync()`: runs a deduplicated Expo update check, fetches an available update, reloads the app, and returns `Promise<boolean>`
 
 ### `await initialized.getDeviceId()`
 
@@ -364,6 +324,12 @@ Returns the low-level updater from `createUpdater(config)`, or `null` when the s
 Runs startup confirmation through the low-level updater.
 
 Returns `Promise<ExpoReadyResult | null>`.
+
+### `await initialized.sync()`
+
+Sets the OTA App Key request header, writes the resolved Otalan device ID to Expo update extra params, then calls `Updates.checkForUpdateAsync()`, `Updates.fetchUpdateAsync()`, and `Updates.reloadAsync()`.
+
+Returns `Promise<boolean>`. It resolves `true` when a fetched update or rollback triggers reload, and `false` when updates are disabled, no update is available, fetching reports no new update, or an Expo update API call fails. `false` results are logged with compact `expo-updates` state, including enabled status, launch flags, runtime version, update ID, platform, and skip/result reason.
 
 ### Package Metadata Exports
 

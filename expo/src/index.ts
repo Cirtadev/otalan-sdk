@@ -56,6 +56,7 @@ export type InitializedExpoUpdater = {
   getDeviceId: () => Promise<string | null>
   getUpdater: () => ReturnType<typeof createUpdater> | null
   ready: () => Promise<ExpoReadyResult | null>
+  sync: () => Promise<boolean>
 }
 
 // -----------------------------------------------------------------------------
@@ -70,6 +71,7 @@ const MAX_SERIALIZED_CAUSE_DEPTH = 5
 
 export const OTALAN_EXPO_SDK_NAME = packageJson.name
 export const OTALAN_EXPO_SDK_VERSION = packageJson.version
+export const OTALAN_EXPO_DEVICE_ID_EXTRA_PARAM_KEY = 'otalan-device-id'
 
 const SDK_LOG_CONTEXT = {
   sdkName: OTALAN_EXPO_SDK_NAME,
@@ -225,6 +227,105 @@ async function persistDeviceId(
     await storage.setItem(storageKey, deviceId)
   } catch (error) {
     logger.warn('Otalan device ID storage migration failed.', serializeErrorForLog(error))
+  }
+}
+
+async function setExpoUpdateDeviceIdExtraParam(
+  deviceId: string,
+  logger: Pick<Console, 'warn'>,
+) {
+  try {
+    await Updates.setExtraParamAsync(OTALAN_EXPO_DEVICE_ID_EXTRA_PARAM_KEY, deviceId)
+  } catch (error) {
+    logger.warn('Otalan Expo update device ID extra param failed.', serializeErrorForLog(error))
+  }
+}
+
+function setExpoUpdateRequestHeaders(
+  config: Pick<ExpoUpdaterConfig, 'apiKey'>,
+  logger: Pick<Console, 'warn'>,
+) {
+  try {
+    Updates.setUpdateRequestHeadersOverride({ 'x-api-key': config.apiKey })
+  } catch (error) {
+    logger.warn('Otalan Expo update request header override failed.', serializeErrorForLog(error))
+  }
+}
+
+function buildExpoUpdatesSyncLogContext(extra?: Record<string, unknown>) {
+  return {
+    ...SDK_LOG_CONTEXT,
+    platform: Platform.OS,
+    expoUpdates: {
+      isEnabled: Updates.isEnabled,
+      isEmbeddedLaunch: Updates.isEmbeddedLaunch,
+      isEmergencyLaunch: Updates.isEmergencyLaunch,
+      runtimeVersion: Updates.runtimeVersion ?? null,
+      updateId: Updates.updateId ?? null,
+    },
+    ...extra,
+  }
+}
+
+function resolveExpoSyncUnavailableReason(
+  config: InitializeExpoUpdaterConfig,
+  deviceId: string | null,
+  updater: ReturnType<typeof createUpdater> | null,
+) {
+  if (config.enabled === false) {
+    return 'disabled-by-config'
+  }
+
+  if (config.enabled !== true && !Updates.isEnabled) {
+    return 'expo-updates-disabled'
+  }
+
+  if (config.enabled !== true && !isNativeOtaPlatform(Platform.OS)) {
+    return 'unsupported-platform'
+  }
+
+  if (config.enabled !== true && !config.apiUrl) {
+    return 'missing-api-url'
+  }
+
+  if (config.enabled !== true && !config.apiKey) {
+    return 'missing-api-key'
+  }
+
+  if (config.enabled !== true && !config.channel) {
+    return 'missing-channel'
+  }
+
+  if (!deviceId) {
+    return 'missing-device-id'
+  }
+
+  if (!updater) {
+    return 'updater-unavailable'
+  }
+
+  return 'unavailable'
+}
+
+function summarizeExpoUpdateCheckResult(result: {
+  isAvailable?: boolean
+  isRollBackToEmbedded?: boolean
+  reason?: unknown
+}) {
+  return {
+    isAvailable: result.isAvailable,
+    isRollBackToEmbedded: result.isRollBackToEmbedded,
+    ...(typeof result.reason === 'string' ? { reason: result.reason } : {}),
+  }
+}
+
+function summarizeExpoUpdateFetchResult(result: {
+  isNew?: boolean
+  isRollBackToEmbedded?: boolean
+}) {
+  return {
+    isNew: result.isNew,
+    isRollBackToEmbedded: result.isRollBackToEmbedded,
   }
 }
 
@@ -443,6 +544,7 @@ export async function initializeUpdater(
   const logger = config.logger ?? console
   let deviceId = normalizeDeviceId(config.deviceId)
   let readyPromise: Promise<ExpoReadyResult | null> | null = null
+  let syncPromise: Promise<boolean> | null = null
   let updater: ReturnType<typeof createUpdater> | null = null
 
   function isEnabled() {
@@ -508,10 +610,61 @@ export async function initializeUpdater(
     return readyPromise
   }
 
+  async function runSync() {
+    if (!isEnabled() || !deviceId || !updater) {
+      logger.warn('Otalan Expo sync skipped.', buildExpoUpdatesSyncLogContext({
+        reason: resolveExpoSyncUnavailableReason(config, deviceId, updater),
+        hasDeviceId: Boolean(deviceId),
+        hasUpdater: Boolean(updater),
+      }))
+      return false
+    }
+
+    await setExpoUpdateDeviceIdExtraParam(deviceId, logger)
+    setExpoUpdateRequestHeaders(config, logger)
+
+    const update = await Updates.checkForUpdateAsync()
+    if (!update.isAvailable && !update.isRollBackToEmbedded) {
+      logger.warn('Otalan Expo sync found no available update.', buildExpoUpdatesSyncLogContext({
+        update: summarizeExpoUpdateCheckResult(update),
+      }))
+      return false
+    }
+
+    const fetchResult = await Updates.fetchUpdateAsync()
+    if (!fetchResult.isNew && !fetchResult.isRollBackToEmbedded) {
+      logger.warn('Otalan Expo sync fetch returned no new update.', buildExpoUpdatesSyncLogContext({
+        fetchResult: summarizeExpoUpdateFetchResult(fetchResult),
+      }))
+      return false
+    }
+
+    await Updates.reloadAsync()
+    return true
+  }
+
+  async function sync() {
+    if (syncPromise) {
+      return syncPromise
+    }
+
+    syncPromise = runSync().catch((error) => {
+      logger.warn('Otalan Expo sync failed.', buildExpoUpdatesSyncLogContext({
+        error: serializeErrorForLog(error),
+      }))
+      return false
+    }).finally(() => {
+      syncPromise = null
+    })
+
+    return syncPromise
+  }
+
   const managedUpdater = {
     getDeviceId,
     getUpdater,
     ready,
+    sync,
   }
 
   void ready()

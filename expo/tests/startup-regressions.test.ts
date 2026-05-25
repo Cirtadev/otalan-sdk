@@ -93,6 +93,7 @@ function applyModuleMocks() {
     runtimeVersion: expoState.runtimeVersion,
     updateId: expoState.updateId,
     manifest: expoState.manifest,
+    setExtraParamAsync: async () => {},
   }))
 }
 
