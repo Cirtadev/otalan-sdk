@@ -3,7 +3,7 @@
 Monorepo for the Otalan mobile OTA SDK packages:
 
 - `@otalan/capacitor`: full Otalan OTA client for Capacitor apps
-- `@otalan/expo`: small confirmation helper for Expo apps using `expo-updates`
+- `@otalan/expo`: confirmation and manual sync helper for Expo apps using `expo-updates`
 
 Website: [otalan.com](https://otalan.com)
 
@@ -25,13 +25,13 @@ Package docs: [capacitor/README.md](capacitor/README.md)
 
 Use this when your app uses Expo with `expo-updates` and you only need:
 
-- startup confirmation for launched OTA updates
+- install confirmation for launched OTA updates
 - current update metadata
 - a small `initializeUpdater()` helper with manual sync
 
 It delegates update checks, fetching, and reloads to `expo-updates`; it does not replace Expo's runtime or report SDK-managed download progress itself.
 
-For Expo download progress, listen to `expo-updates` download state directly, for example `useUpdates().downloadProgress` while `useUpdates().isDownloading` is true.
+For Expo download progress, listen to `expo-updates` download state directly, for example `useUpdates().downloadProgress` while `useUpdates().isDownloading` is true. The Expo package docs include a small adapter example for apps that want an `onProgress` callback shape.
 
 Package docs: [expo/README.md](expo/README.md)
 
@@ -45,21 +45,37 @@ Capacitor update checks include `appId`, `platform`, `channel`, `runtimeVersion`
 
 Expo update selection is handled by `expo-updates` and the Otalan manifest endpoint. `@otalan/expo` can run the manual `expo-updates` check/fetch/reload flow through `initialized.sync()`, and it observes and confirms the launched update with its app, platform, channel, runtime version, Otalan bundle ID, and device ID context.
 
-## Startup Enablement
+## Helper Enablement
 
-When `enabled` is omitted, both startup helpers auto-enable only when their runtime and required config are available. Pass `enabled: false` to force a no-op. Pass `enabled: true` only when your app has its own gate, because it bypasses the helper's default config checks and can surface missing or invalid config as request failures when helper network work runs. Native iOS and Android platform validation still applies.
+When `enabled` is omitted, both helpers auto-enable only when their runtime and required config are available. Pass `enabled: false` to force a no-op. Pass `enabled: true` only when your app has its own gate, because it bypasses the helper's default config checks and can surface missing or invalid config as request failures when helper network work runs. Native iOS and Android platform validation still applies.
 
-Both startup helpers start current-bundle confirmation in the background after setup. The Capacitor startup helper does not run a launch update sync; updates are checked only when `initialized.sync()` is called or when the configured resume listener fires.
+Both helpers start current-bundle confirmation in the background after setup. The Capacitor helper does not run a launch update sync; updates are checked only when `initialized.sync()` is called or when the configured resume listener fires.
 
 ## Device IDs
 
-Both package startup helpers can create and persist a stable device ID unless the app provides one. Low-level `createUpdater()` APIs still require an explicit `deviceId`. Expo Android apps treat `Application.getAndroidId()` as authoritative when available and migrate storage to it; Expo iOS apps use the vendor ID when available and otherwise fall back to the stored SDK ID.
+Both package helpers can create and persist a stable device ID unless the app provides one. Low-level `createUpdater()` APIs still require an explicit `deviceId`. Expo Android apps treat `Application.getAndroidId()` as authoritative when available and migrate storage to it; Expo iOS apps use the vendor ID when available and otherwise fall back to the stored SDK ID.
 
 Expo apps should call `initialized.sync()` for manual update checks. The SDK resolves the stable device ID, passes it to Expo update requests through Expo extra params for Otalan rollout bucketing, sets the OTA App Key request header, then calls `expo-updates` check, fetch, and reload APIs. App code does not need to know or set an Otalan device header.
 
 Capacitor checks go through `@otalan/capacitor`, so the SDK sends the resolved ID itself.
 
 ## Basic Usage
+
+These values are bundled into the mobile client; do not publish or share the OTA App Key outside the app.
+
+OTA App Key values use the `otalan_ota_...` token format. OTA Publish Key values use the `otalan_ci_...` token format and are for release automation only; never bundle OTA Publish Keys into app code.
+
+### Capacitor
+
+For Capacitor apps using Vite:
+
+```dotenv
+VITE_OTALAN_API_URL=https://api.otalan.com
+VITE_OTALAN_APP_KEY=otalan_ota_xxx
+VITE_OTALAN_APP_ID=com.example.app
+VITE_OTALAN_CHANNEL=production
+VITE_OTALAN_RUNTIME_VERSION=1.0.0
+```
 
 Capacitor sync:
 
@@ -68,7 +84,7 @@ import { initializeUpdater, type InitializedCapacitorUpdater } from '@otalan/cap
 
 let updater: InitializedCapacitorUpdater | undefined
 
-export async function sync() {
+export async function syncOtalanUpdates() {
   if (!updater) {
     updater = await initializeUpdater({
       apiUrl: import.meta.env.VITE_OTALAN_API_URL,
@@ -92,9 +108,7 @@ export async function sync() {
 }
 ```
 
-You can also pass these values from your app's environment variables. For example, keep local values in a `.env` file and read them with the env API provided by your app framework, such as Expo client-exposed env vars (`EXPO_PUBLIC_`) or Vite's `import.meta.env` (`VITE_`). These values are bundled into the mobile client; do not publish or share the OTA App Key outside the app.
-
-OTA App Key values use the `otalan_ota_...` token format. OTA Publish Key values use the `otalan_ci_...` token format and are for release automation only; never bundle OTA Publish Keys into app code.
+### Expo
 
 For Expo apps:
 
@@ -105,15 +119,6 @@ EXPO_PUBLIC_OTALAN_APP_ID=com.example.app
 EXPO_PUBLIC_OTALAN_CHANNEL=production
 ```
 
-For Capacitor apps using Vite:
-
-```dotenv
-VITE_OTALAN_API_URL=https://api.otalan.com
-VITE_OTALAN_APP_KEY=otalan_ota_xxx
-VITE_OTALAN_APP_ID=com.example.app
-VITE_OTALAN_CHANNEL=production
-```
-
 Expo update sync:
 
 ```ts
@@ -122,12 +127,10 @@ import { initializeUpdater, type InitializedExpoUpdater } from '@otalan/expo'
 let updater: InitializedExpoUpdater | undefined
 
 export async function syncOtalanUpdates() {
-  const apiKey = process.env.EXPO_PUBLIC_OTALAN_APP_KEY!
-
   if (!updater) {
     updater = await initializeUpdater({
       apiUrl: process.env.EXPO_PUBLIC_OTALAN_API_URL!,
-      apiKey,
+      apiKey: process.env.EXPO_PUBLIC_OTALAN_APP_KEY!,
       appId: process.env.EXPO_PUBLIC_OTALAN_APP_ID!,
       channel: process.env.EXPO_PUBLIC_OTALAN_CHANNEL!,
     })

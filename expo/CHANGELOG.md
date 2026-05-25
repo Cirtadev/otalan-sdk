@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.1 - 2026-05-25
+
+### Changed
+
+- Documented how Expo apps can mirror callback-style download progress with `useUpdates().downloadProgress` while keeping `expo-updates` as the owner of update downloads.
+- Corrected the Expo quick-start sample to show lazy `initialized.sync()` usage instead of startup-only initialization.
+- Consolidated Expo configuration and staged-rollout documentation to avoid repeated app config and runtime sync samples.
+- Refined root README and package metadata wording so Expo is described as a confirmation and manual sync helper.
+
 ## 1.5.0 - 2026-05-25
 
 ### Added

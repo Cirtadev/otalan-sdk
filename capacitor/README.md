@@ -14,7 +14,7 @@ This package is the full client-side orchestration layer for Otalan on Capacitor
 - sets the next bundle
 - reloads the app when needed
 - confirms successful installs with advisory bundle transfer source metadata
-- provides a startup helper through `initializeUpdater()`
+- provides an initialized helper through `initializeUpdater()`
 
 The SDK uses Capacitor's native HTTP transport for Otalan API calls on iOS and Android, with browser `fetch()` kept as the non-native fallback.
 
@@ -68,38 +68,24 @@ bun add @otalan/capacitor @capawesome/capacitor-live-update @capacitor/app @capa
 
 ## Quick Start
 
-Call `initializeUpdater()` once during app startup:
-
-```ts
-import { initializeUpdater } from '@otalan/capacitor'
-
-const otalan = await initializeUpdater({
-  apiUrl: 'https://api.otalan.com',
-  apiKey: 'otalan_ota_xxx',
-  channel: 'production',
-  onResume: true,
-})
-
-const deviceId = await otalan.getDeviceId()
-```
-
-## Vite Example
-
-If you want to use environment variables, store your local Otalan values in your app's `.env` file and expose only client-bundled variables, such as `VITE_OTALAN_API_URL`, `VITE_OTALAN_APP_KEY`, `VITE_OTALAN_APP_ID`, and `VITE_OTALAN_CHANNEL`.
+Store your Otalan values in your app's `.env` file and expose only client-bundled variables, such as Vite's `VITE_` variables.
 
 ```dotenv
 VITE_OTALAN_API_URL=https://api.otalan.com
 VITE_OTALAN_APP_KEY=otalan_ota_xxx
 VITE_OTALAN_APP_ID=com.example.app
 VITE_OTALAN_CHANNEL=production
+VITE_OTALAN_RUNTIME_VERSION=1.0.0
 ```
+
+Create the updater when your app is ready to manage OTA updates, then reuse it for later checks:
 
 ```ts
 import { initializeUpdater, type InitializedCapacitorUpdater } from '@otalan/capacitor'
 
 let updater: InitializedCapacitorUpdater | undefined
 
-export async function sync() {
+export async function syncOtalanUpdates() {
   if (!updater) {
     updater = await initializeUpdater({
       apiUrl: import.meta.env.VITE_OTALAN_API_URL,
@@ -123,7 +109,7 @@ export async function sync() {
 }
 ```
 
-`initializeUpdater()` creates and persists a stable `deviceId` when you do not provide one. Otalan uses that ID for update checks, confirmation, and rollout targeting.
+`initializeUpdater()` creates and persists a stable `deviceId` when you do not provide one. Otalan uses that ID for update checks, install confirmation, and rollout targeting.
 
 ## Custom Device ID Storage
 
@@ -133,43 +119,28 @@ If you want different storage, provide a custom adapter:
 
 ```ts
 import { Preferences } from '@capacitor/preferences'
-import { initializeUpdater } from '@otalan/capacitor'
 
-await initializeUpdater({
-  apiUrl: 'https://api.otalan.com',
-  apiKey: 'otalan_ota_xxx',
-  channel: 'production',
-  deviceIdStorage: {
-    getItem: async (key) => {
-      const result = await Preferences.get({ key })
-      return result.value
-    },
-    setItem: (key, value) => Preferences.set({ key, value }),
+const deviceIdStorage = {
+  getItem: async (key: string) => {
+    const result = await Preferences.get({ key })
+    return result.value
   },
-})
+  setItem: (key: string, value: string) => Preferences.set({ key, value }),
+}
 ```
+
+Pass `deviceIdStorage` in the `initializeUpdater()` options from the quick start.
 
 If your app already owns a stable ID, pass it explicitly:
 
 ```ts
-await initializeUpdater({
-  apiUrl: 'https://api.otalan.com',
-  apiKey: 'otalan_ota_xxx',
-  channel: 'production',
-  deviceId: await loadOrCreateStableDeviceId(),
-})
+deviceId: await loadOrCreateStableDeviceId(),
 ```
 
 `initializeUpdater()` returns the resolved ID:
 
 ```ts
-const otalan = await initializeUpdater({
-  apiUrl: 'https://api.otalan.com',
-  apiKey: 'otalan_ota_xxx',
-  channel: 'production',
-})
-
-const deviceId = await otalan.getDeviceId()
+const deviceId = await updater.getDeviceId()
 ```
 
 ## Low-Level Usage
@@ -193,31 +164,13 @@ await updater.sync()
 
 ## Download Progress
 
-Pass `onDownloadProgress` to receive native bundle download progress during `sync()`.
-
-```ts
-import { initializeUpdater } from '@otalan/capacitor'
-
-await initializeUpdater({
-  apiUrl: 'https://api.otalan.com',
-  apiKey: 'otalan_ota_xxx',
-  channel: 'production',
-  onDownloadProgress: (event) => {
-    console.log(
-      event.bundleId,
-      event.progress,
-      event.downloadedBytes,
-      event.totalBytes,
-    )
-  },
-})
-```
+The quick-start sample passes `onDownloadProgress` to receive native bundle download progress during `sync()`.
 
 `progress` is a number from `0` to `1`. The callback is only called for bundles downloaded by this SDK; cached or already-staged bundles do not emit download progress. The SDK filters native progress events to the selected bundle and removes the native listener after the download settles.
 
 This callback is specific to `@otalan/capacitor` because the Capacitor SDK owns the bundle download call. Expo apps should listen to `expo-updates` download state directly, for example `useUpdates().downloadProgress` while `useUpdates().isDownloading` is true.
 
-## Startup Helper Behavior
+## Initialized Helper Behavior
 
 When `enabled` is omitted, `initializeUpdater()`:
 
@@ -296,7 +249,7 @@ Returns `Promise<string | null>`.
 
 ### `await initialized.getUpdater()`
 
-Returns the low-level updater from `createUpdater(config)`, or `null` when the startup helper is disabled or the platform is unsupported.
+Returns the low-level updater from `createUpdater(config)`, or `null` when the initialized helper is disabled or the platform is unsupported.
 
 ### `await initialized.sync()`
 

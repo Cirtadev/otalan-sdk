@@ -1,9 +1,9 @@
 {
   "name": "@otalan/expo",
   "type": "module",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "license": "Apache-2.0",
-  "description": "Otalan OTA confirmation helper for Expo apps using expo-updates.",
+  "description": "Otalan OTA confirmation and manual sync helper for Expo apps using expo-updates.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Cirtadev/otalan-sdk.git",
