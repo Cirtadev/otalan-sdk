@@ -21,7 +21,6 @@ export type ExpoUpdaterConfig = {
   apiKey: string
   appId: string
   channel: string
-  autoConfirm?: boolean
   deviceId: string
   requestTimeoutMs?: number
   headers?: HeadersInit
@@ -392,7 +391,6 @@ export async function initializeUpdater(
         apiKey: config.apiKey,
         appId: config.appId,
         channel: config.channel,
-        autoConfirm: config.autoConfirm,
         deviceId,
         requestTimeoutMs: config.requestTimeoutMs,
         headers: config.headers,
@@ -474,10 +472,6 @@ export function createUpdater(config: ExpoUpdaterConfig) {
     const current = await getCurrentUpdate()
 
     if (!current.enabled) {
-      return current
-    }
-
-    if (config.autoConfirm === false) {
       return current
     }
 

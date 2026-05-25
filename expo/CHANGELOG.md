@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.0 - 2026-05-25
+
+### Changed
+
+- Corrected Expo staged-rollout documentation so Android examples use the same `x-device-id` value in native update headers, `initializeUpdater({ deviceId })`, and runtime header overrides.
+- Removed the public `autoConfirm` opt-out. Install confirmation is best-effort whenever `ready()` observes an eligible Otalan update.
+
 ## 1.3.1 - 2026-05-22
 
 ### Fixed

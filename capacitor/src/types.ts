@@ -28,6 +28,15 @@ export type DeviceIdStorage = {
 /** @experimental Advisory client-reported transfer metadata. */
 export type CapacitorTransferSource = 'downloaded' | 'cached'
 
+export type CapacitorDownloadProgress = {
+  bundleId: string
+  downloadedBytes: number
+  totalBytes: number
+  progress: number
+}
+
+export type CapacitorDownloadProgressListener = (event: CapacitorDownloadProgress) => void
+
 export type CapacitorUpdaterConfig = {
   apiUrl: string
   apiKey: string
@@ -36,11 +45,11 @@ export type CapacitorUpdaterConfig = {
   runtimeVersion?: string
   platform?: OtaPlatform
   deviceId: string
-  autoConfirm?: boolean
   reloadOnSync?: boolean
   requestTimeoutMs?: number
   allowInsecureBundleUrls?: boolean
   headers?: HeadersInit
+  onDownloadProgress?: CapacitorDownloadProgressListener
   logger?: Pick<Console, 'warn'>
 }
 
@@ -56,8 +65,6 @@ export type CapacitorSyncResult =
     releaseNotes?: string | null
     reloadRequired?: boolean
   }
-
-export type CapacitorSyncTrigger = 'launch' | 'resume' | 'manual'
 
 export type InitializeCapacitorUpdaterConfig = Omit<CapacitorUpdaterConfig, 'appId' | 'deviceId' | 'logger'> & {
   appId?: string

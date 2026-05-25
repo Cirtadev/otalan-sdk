@@ -18,8 +18,16 @@ type CapacitorHttpPostInput = {
   readTimeout?: number
 }
 
+export type DownloadProgressEvent = {
+  bundleId: string
+  downloadedBytes: number
+  totalBytes: number
+  progress: number
+}
+
 export const capacitorState = {
   appId: 'com.example.app',
+  appInfoError: null as Error | null,
   isNativePlatform: true,
   platform: 'ios' as 'ios' | 'android' | 'web',
   currentBundle: { bundleId: undefined as string | undefined },
@@ -27,10 +35,15 @@ export const capacitorState = {
   downloadedBundles: [] as string[],
   downloadBundleError: null as Error | null,
   getDownloadedBundlesError: null as Error | null,
+  addDownloadProgressListenerError: null as Error | null,
   versionName: '1.0.0',
   readyResult: { currentBundleId: undefined as string | undefined },
   addListenerCalls: 0,
   addListenerError: null as Error | null,
+  addDownloadProgressListenerCalls: 0,
+  downloadProgressListenerRemovals: 0,
+  downloadProgressEvents: [] as DownloadProgressEvent[],
+  downloadProgressListeners: [] as Array<(event: DownloadProgressEvent) => void>,
   downloadCalls: [] as Array<{ url: string; bundleId: string; checksum?: string }>,
   setNextCalls: [] as Array<{ bundleId: string }>,
   reloadCalls: 0,
@@ -70,6 +83,7 @@ export const liveUpdateMock = {
   },
   downloadBundle: async (input: { url: string; bundleId: string; checksum?: string }) => {
     capacitorState.downloadCalls.push(input)
+    emitConfiguredDownloadProgress()
 
     if (capacitorState.downloadBundleError) {
       throw capacitorState.downloadBundleError
@@ -81,6 +95,32 @@ export const liveUpdateMock = {
   reload: async () => {
     capacitorState.reloadCalls += 1
   },
+  addListener: async (
+    eventName: 'downloadBundleProgress',
+    listener: (event: DownloadProgressEvent) => void,
+  ) => {
+    if (eventName !== 'downloadBundleProgress') {
+      throw new Error(`Unsupported listener: ${eventName}`)
+    }
+
+    capacitorState.addDownloadProgressListenerCalls += 1
+
+    if (capacitorState.addDownloadProgressListenerError) {
+      throw capacitorState.addDownloadProgressListenerError
+    }
+
+    capacitorState.downloadProgressListeners.push(listener)
+
+    return {
+      remove: async () => {
+        const index = capacitorState.downloadProgressListeners.indexOf(listener)
+        if (index >= 0) {
+          capacitorState.downloadProgressListeners.splice(index, 1)
+        }
+        capacitorState.downloadProgressListenerRemovals += 1
+      },
+    }
+  },
 }
 
 // -----------------------------------------------------------------------------
@@ -89,7 +129,13 @@ export const liveUpdateMock = {
 
 mock.module('@capacitor/app', () => ({
   App: {
-    getInfo: async () => ({ id: capacitorState.appId }),
+    getInfo: async () => {
+      if (capacitorState.appInfoError) {
+        throw capacitorState.appInfoError
+      }
+
+      return { id: capacitorState.appId }
+    },
     addListener: async () => {
       capacitorState.addListenerCalls += 1
 
@@ -240,6 +286,7 @@ export function resetCapacitorTestHarness() {
   installMemoryLocalStorage()
 
   capacitorState.appId = 'com.example.app'
+  capacitorState.appInfoError = null
   capacitorState.isNativePlatform = true
   capacitorState.platform = 'ios'
   capacitorState.currentBundle = { bundleId: undefined }
@@ -247,10 +294,15 @@ export function resetCapacitorTestHarness() {
   capacitorState.downloadedBundles = []
   capacitorState.downloadBundleError = null
   capacitorState.getDownloadedBundlesError = null
+  capacitorState.addDownloadProgressListenerError = null
   capacitorState.versionName = '1.0.0'
   capacitorState.readyResult = { currentBundleId: undefined }
   capacitorState.addListenerCalls = 0
   capacitorState.addListenerError = null
+  capacitorState.addDownloadProgressListenerCalls = 0
+  capacitorState.downloadProgressListenerRemovals = 0
+  capacitorState.downloadProgressEvents = []
+  capacitorState.downloadProgressListeners = []
   capacitorState.downloadCalls = []
   capacitorState.setNextCalls = []
   capacitorState.reloadCalls = 0
@@ -300,6 +352,18 @@ async function waitForCondition(condition: () => boolean, message: string) {
   }
 
   throw new Error(message)
+}
+
+function emitConfiguredDownloadProgress() {
+  for (const event of capacitorState.downloadProgressEvents) {
+    emitDownloadProgress(event)
+  }
+}
+
+function emitDownloadProgress(event: DownloadProgressEvent) {
+  for (const listener of [...capacitorState.downloadProgressListeners]) {
+    listener(event)
+  }
 }
 
 async function responseToNativeHttpResponse(response: Response, url: string) {

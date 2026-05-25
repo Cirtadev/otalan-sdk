@@ -10,6 +10,7 @@ This package is the full client-side orchestration layer for Otalan on Capacitor
 - requires and verifies served compatibility results before staging a bundle
 - decides whether a bundle should be applied
 - downloads bundles through `@capawesome/capacitor-live-update`
+- reports native bundle download progress when requested
 - sets the next bundle
 - reloads the app when needed
 - confirms successful installs with advisory bundle transfer source metadata
@@ -129,7 +130,7 @@ export function useOtalanUpdates() {
 
     try {
       const otalan = await getOtalanUpdater()
-      const result = await otalan.sync('manual')
+      const result = await otalan.sync()
 
       if (!result) {
         status.value = 'skipped'
@@ -223,6 +224,32 @@ await updater.ready()
 await updater.sync()
 ```
 
+## Download Progress
+
+Pass `onDownloadProgress` to receive native bundle download progress during `sync()`.
+
+```ts
+import { initializeUpdater } from '@otalan/capacitor'
+
+await initializeUpdater({
+  apiUrl: 'https://api.otalan.com',
+  apiKey: 'otalan_ota_xxx',
+  channel: 'production',
+  onDownloadProgress: (event) => {
+    console.log(
+      event.bundleId,
+      event.progress,
+      event.downloadedBytes,
+      event.totalBytes,
+    )
+  },
+})
+```
+
+`progress` is a number from `0` to `1`. The callback is only called for bundles downloaded by this SDK; cached or already-staged bundles do not emit download progress. The SDK filters native progress events to the selected bundle and removes the native listener after the download settles.
+
+This callback is specific to `@otalan/capacitor` because the Capacitor SDK owns the bundle download call. Expo apps should listen to `expo-updates` download state directly, for example `useUpdates().downloadProgress` while `useUpdates().isDownloading` is true.
+
 ## Startup Helper Behavior
 
 When `enabled` is omitted, `initializeUpdater()`:
@@ -232,23 +259,24 @@ When `enabled` is omitted, `initializeUpdater()`:
 - resolves `appId` from `App.getInfo()` unless you provide one
 - creates and persists a stable `deviceId` unless you provide one
 - exposes the resolved `deviceId` through `getDeviceId()`
-- starts one launch sync in the background
+- starts `LiveUpdate.ready()` and install confirmation once in the background
+- does not run a launch sync
 - can register a resume listener
 - logs device ID storage failures and returns a no-op updater
-- logs resume listener registration failures and still starts launch sync
+- logs resume listener registration failures and still returns the initialized helper
 - deduplicates concurrent sync calls
 - swallows sync failures and logs warnings instead
 - keeps install confirmation best-effort during sync so a slow confirmation request cannot block the next update check
 
-Pass `enabled: false` to force a no-op. Pass `enabled: true` only when your app has its own runtime/config gate, because it bypasses the default required config checks. Native iOS and Android platform validation still applies. With `enabled: true`, missing or invalid `apiUrl`, `apiKey`, or `channel` values can produce startup sync warnings instead of the helper silently no-oping.
+Pass `enabled: false` to force a no-op. Pass `enabled: true` only when your app has its own runtime/config gate, because it bypasses the default required config checks. Native iOS and Android platform validation still applies. With `enabled: true`, missing or invalid `apiUrl`, `apiKey`, or `channel` values can produce sync warnings when your app calls `sync()` instead of the helper silently no-oping.
 
 On a fresh native install, `LiveUpdate.getCurrentBundle()` and `LiveUpdate.getNextBundle()` can both return `null` bundle IDs. That is normal before the device has activated or staged an OTA bundle.
 
-If startup or resume sync logs `[ota] ... sync failed`, the failure happened after the Live Update state checks, usually during an update check or bundle download/staging. The SDK logs a serializable `{ sdkName, sdkVersion, name, message }` error payload so native consoles can show the installed SDK version, HTTP status, API message, plugin operation, or fetch failure instead of an empty `{}`.
+If manual or resume sync logs `[ota] ... sync failed`, the failure happened after the Live Update state checks, usually during an update check or bundle download/staging. The SDK logs a serializable `{ sdkName, sdkVersion, name, message }` error payload so native consoles can show the installed SDK version, HTTP status, API message, plugin operation, or fetch failure instead of an empty `{}`.
 
 If the message says `failed before response`, the request did not receive an HTTP response. Check that `apiUrl` is reachable from the device, uses a trusted certificate, and is allowed by platform HTTP security settings.
 
-`initializeUpdater()` resolves after setup and does not wait for launch sync network work to finish. Call `initialized.sync()` if your app needs to await the current launch sync or run a manual sync later.
+`initializeUpdater()` resolves after setup and does not start launch update check, download, staging, or reload work. It may send a best-effort install confirmation for the currently launched bundle. Call `initialized.sync()` when your app should check for, download, stage, and optionally reload an update. If `onResume` is enabled, the registered resume listener also runs a deduplicated sync when the app resumes.
 
 ## API
 
@@ -263,11 +291,11 @@ Config:
 - `runtimeVersion`: optional local runtime version override, sent to Otalan as `runtimeVersion`
 - `platform`: optional platform override
 - `deviceId`: required stable device ID
-- `autoConfirm`: defaults to `true`
 - `reloadOnSync`: defaults to `true`
 - `requestTimeoutMs`: request timeout for Otalan API calls, defaults to `15000`
 - `allowInsecureBundleUrls`: defaults to `false`; set only for development bundle URLs served over plain HTTP
 - `headers`: optional extra request headers
+- `onDownloadProgress`: optional callback for native bundle download progress events
 - `logger`: optional warning logger
 
 Returns a low-level Capacitor updater:
@@ -293,7 +321,7 @@ Returns:
 
 - `getDeviceId()`: resolves the stable device ID or `null` when no updater is enabled and no explicit ID was provided
 - `getUpdater()`: resolves the low-level updater or `null`
-- `sync(trigger?)`: runs a deduplicated sync and returns `CapacitorSyncResult | null`
+- `sync()`: runs a deduplicated sync and returns `CapacitorSyncResult | null`
 
 ### `await initialized.getDeviceId()`
 
@@ -303,11 +331,11 @@ Returns `Promise<string | null>`.
 
 Returns the low-level updater from `createUpdater(config)`, or `null` when the startup helper is disabled or the platform is unsupported.
 
-### `await initialized.sync(trigger?)`
+### `await initialized.sync()`
 
 Runs a deduplicated update sync through the low-level updater.
 
-Returns `Promise<CapacitorSyncResult | null>`.
+Returns `Promise<CapacitorSyncResult | null>`. The initialized helper logs setup or sync failures and returns `null`, so normal app startup code can handle a skipped or failed sync without wrapping this call in `try`/`catch`. Low-level `createUpdater().check()` and `createUpdater().sync()` still reject on API, validation, download, or staging failures.
 
 ### Package Metadata Exports
 
@@ -370,6 +398,13 @@ Returns `Promise<CapacitorSyncResult>`.
 - `rolloutPercent`: rollout percentage returned by the API
 - `releaseNotes`: optional release notes
 
+`CapacitorDownloadProgress`:
+
+- `bundleId`: bundle ID being downloaded
+- `downloadedBytes`: downloaded byte count
+- `totalBytes`: total byte count reported by the native plugin
+- `progress`: download progress from `0` to `1`
+
 `CapacitorSyncResult`:
 
 - `updateAvailable`: whether Otalan selected an update that should be applied
@@ -382,13 +417,13 @@ Returns `Promise<CapacitorSyncResult>`.
 
 ## Network Behavior
 
-The SDK sends the OTA App Key with Otalan requests. Update checks include `appId`, `platform`, `channel`, `runtimeVersion`, `currentBundleId` when available, and the stable `deviceId`. Successful check responses must include matching `appId`, `platform`, `runtimeVersion`, `bundleId`, `downloadUrl`, and `checksum`; the SDK validates those fields before trusting `updateAvailable` or using any selected bundle. Missing or mismatched compatibility metadata rejects `check()` or `sync()`; `initializeUpdater()` logs the sync failure and leaves the host app running. Install confirmations include the app identifier, platform, channel, runtime version, bundle ID, stable device ID, and `transferSource`.
+The SDK sends the OTA App Key with Otalan requests. Update checks include `appId`, `platform`, `channel`, `runtimeVersion`, `currentBundleId` when available, and the stable `deviceId`. Successful check responses must include matching `appId`, `platform`, `runtimeVersion`, `bundleId`, `downloadUrl`, and `checksum`; the SDK validates those fields before trusting `updateAvailable` or using any selected bundle. Missing or mismatched compatibility metadata rejects low-level `check()` or `sync()` calls; initialized helper syncs log the failure and leave the host app running. Otalan can count an update as served when the check response selects a bundle with `downloadUrl`; install confirmations are a separate client-reported signal that the device successfully launched or applied that bundle. Install confirmations include the app identifier, platform, channel, runtime version, bundle ID, stable device ID, and `transferSource`.
 
-Otalan API requests time out after `requestTimeoutMs`, defaulting to 15 seconds. Bundle downloads are still performed by `@capawesome/capacitor-live-update`, but the SDK only passes HTTPS `downloadUrl` values to the plugin by default. Set `allowInsecureBundleUrls: true` only for local development environments that intentionally serve bundles over plain HTTP.
+Otalan API requests time out after `requestTimeoutMs`, defaulting to 15 seconds. Bundle downloads are still performed by `@capawesome/capacitor-live-update`, but the SDK only passes HTTPS `downloadUrl` values to the plugin by default. Download progress is forwarded from the plugin's `downloadBundleProgress` event when `onDownloadProgress` is configured. Set `allowInsecureBundleUrls: true` only for local development environments that intentionally serve bundles over plain HTTP.
 
 `transferSource` is either `downloaded` or `cached`. Treat it as advisory client-reported metadata only.
 
-Only active Otalan apps are eligible for OTA checks and install confirmations. If update traffic is unavailable for the app, `initializeUpdater()` logs the rejected request and leaves the host app running; low-level `check()` or `sync()` calls reject with the API error.
+Only active Otalan apps are eligible for OTA checks and install confirmations. If update traffic is unavailable for the app, initialized helper syncs log the rejected request and leave the host app running; low-level `check()` or `sync()` calls reject with the API error.
 
 ## Notes
 

@@ -158,7 +158,7 @@ beforeEach(() => {
 // -----------------------------------------------------------------------------
 
 describe('@otalan/capacitor initializeUpdater resume behavior', () => {
-  test('registers one resume listener and runs sync when the app resumes', async () => {
+  test('registers one resume listener and waits for resume before syncing', async () => {
     await initializeUpdater({
       apiUrl: 'https://api.otalan.com',
       apiKey: 'otalan_ota_xxx',
@@ -168,16 +168,12 @@ describe('@otalan/capacitor initializeUpdater resume behavior', () => {
 
     expect(capacitorState.addListenerCalls).toHaveLength(1)
     expect(capacitorState.addListenerCalls[0]?.eventName).toBe('resume')
-    await waitForFetchCalls(1)
-    expect(fetchState.calls.map((call) => call.url)).toEqual([
-      'https://api.otalan.com/capacitor/check',
-    ])
+    expect(fetchState.calls).toHaveLength(0)
 
     capacitorState.addListenerCalls[0]?.handler()
-    await waitForFetchCalls(2)
+    await waitForFetchCalls(1)
 
     expect(fetchState.calls.map((call) => call.url)).toEqual([
-      'https://api.otalan.com/capacitor/check',
       'https://api.otalan.com/capacitor/check',
     ])
   })
@@ -192,9 +188,6 @@ describe('@otalan/capacitor initializeUpdater resume behavior', () => {
     })
 
     expect(capacitorState.addListenerCalls).toHaveLength(0)
-    await waitForFetchCalls(1)
-    expect(fetchState.calls.map((call) => call.url)).toEqual([
-      'https://api.otalan.com/capacitor/check',
-    ])
+    expect(fetchState.calls).toHaveLength(0)
   })
 })

@@ -15,6 +15,7 @@ Use this when your app is built with Capacitor and Otalan should handle:
 
 - update checks against Otalan
 - bundle download and staging
+- SDK-managed download progress through `onDownloadProgress`
 - reload after install
 - install confirmation with advisory transfer source metadata
 
@@ -28,7 +29,9 @@ Use this when your app uses Expo with `expo-updates` and you only need:
 - current update metadata
 - a small `initializeUpdater()` helper
 
-It does not fetch, select, or apply updates itself.
+It does not fetch, select, apply updates, or report SDK-managed download progress itself.
+
+For Expo download progress, listen to `expo-updates` download state directly, for example `useUpdates().downloadProgress` while `useUpdates().isDownloading` is true.
 
 Package docs: [expo/README.md](expo/README.md)
 
@@ -44,15 +47,17 @@ Expo update selection is handled by `expo-updates` and the Otalan manifest endpo
 
 ## Startup Enablement
 
-When `enabled` is omitted, both startup helpers auto-enable only when their runtime and required config are available. Pass `enabled: false` to force a no-op. Pass `enabled: true` only when your app has its own gate, because it bypasses the helper's default config checks and can surface missing or invalid config as startup request failures. Native iOS and Android platform validation still applies.
+When `enabled` is omitted, both startup helpers auto-enable only when their runtime and required config are available. Pass `enabled: false` to force a no-op. Pass `enabled: true` only when your app has its own gate, because it bypasses the helper's default config checks and can surface missing or invalid config as request failures when helper network work runs. Native iOS and Android platform validation still applies.
 
-Startup helpers start their launch confirmation or sync work in the background after setup. They do not wait for the network before resolving; call `initialized.ready()` or `initialized.sync()` if your app explicitly needs to await the current in-flight work.
+Both startup helpers start current-bundle confirmation in the background after setup. The Capacitor startup helper does not run a launch update sync; updates are checked only when `initialized.sync()` is called or when the configured resume listener fires.
 
 ## Device IDs
 
 Both package startup helpers can create and persist a stable device ID unless the app provides one. Low-level `createUpdater()` APIs still require an explicit `deviceId`.
 
-Expo apps that use staged rollouts must also send the same ID as `x-device-id` on update checks, because `@otalan/expo` does not own the `expo-updates` check request. Capacitor checks go through `@otalan/capacitor`, so the SDK sends the resolved ID itself.
+Expo apps that use staged rollouts must also send a stable `x-device-id` on update checks, because `@otalan/expo` does not own the `expo-updates` check request. On Android, `expo-updates` only launches cached updates when the update URL and request headers match native config, so do not use a runtime-only SDK-generated device ID as an Expo request header. If `x-device-id` is configured for Expo updates, provide the same build-time value in native `updates.requestHeaders`, `initializeUpdater({ deviceId })`, and any `Updates.setUpdateRequestHeadersOverride()` call.
+
+Capacitor checks go through `@otalan/capacitor`, so the SDK sends the resolved ID itself.
 
 ## Basic Usage
 
@@ -82,6 +87,8 @@ EXPO_PUBLIC_OTALAN_API_URL=https://api.otalan.com
 EXPO_PUBLIC_OTALAN_API_KEY=otalan_ota_xxx
 EXPO_PUBLIC_OTALAN_APP_ID=com.example.app
 EXPO_PUBLIC_OTALAN_CHANNEL=production
+# Required only when x-device-id is configured in Expo updates.requestHeaders.
+EXPO_PUBLIC_OTALAN_DEVICE_ID=ota-smoke-com.example.app-android
 ```
 
 For Capacitor apps using Vite:
@@ -103,6 +110,7 @@ const otalan = await initializeUpdater({
   apiKey: 'otalan_ota_xxx',
   appId: 'com.example.app',
   channel: 'production',
+  deviceId: process.env.EXPO_PUBLIC_OTALAN_DEVICE_ID || undefined,
 })
 
 const deviceId = await otalan.getDeviceId()
@@ -112,10 +120,10 @@ const deviceId = await otalan.getDeviceId()
 
 `@otalan/capacitor`:
 
-- `initializeUpdater(config)`: returns an initialized helper with `getDeviceId()`, `getUpdater()`, and `sync(trigger?)`
+- `initializeUpdater(config)`: returns an initialized helper with `getDeviceId()`, `getUpdater()`, and `sync()`
 - `initialized.getDeviceId()`: returns `Promise<string | null>`
 - `initialized.getUpdater()`: returns a promise resolving to the low-level updater or `null`
-- `initialized.sync(trigger?)`: returns `Promise<CapacitorSyncResult | null>`
+- `initialized.sync()`: returns `Promise<CapacitorSyncResult | null>`
 - `createUpdater(config)`: returns a low-level updater with `ready()`, `getCurrentBundleId()`, `check()`, and `sync()`
 - `updater.ready()`: returns the Live Update ready result
 - `updater.getCurrentBundleId()`: returns `Promise<string | undefined>`

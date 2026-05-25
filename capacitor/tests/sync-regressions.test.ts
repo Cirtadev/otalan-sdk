@@ -321,7 +321,7 @@ describe('@otalan/capacitor sync regressions', () => {
     await Promise.resolve()
   })
 
-  test('initializeUpdater logs bundle download context and SDK version when download fails', async () => {
+  test('initialized sync logs bundle download context and SDK version when download fails', async () => {
     capacitorState.currentBundle = { bundleId: '1.0.0-2' }
     capacitorState.downloadBundleError = new TypeError('Load failed')
 
@@ -339,7 +339,7 @@ describe('@otalan/capacitor sync regressions', () => {
 
     const logger = createLogger()
 
-    await initializeUpdater({
+    const updater = await initializeUpdater({
       apiUrl: 'https://api.otalan.com',
       apiKey: 'otalan_ota_xxx',
       appId: 'app.cryptosan.app',
@@ -348,11 +348,12 @@ describe('@otalan/capacitor sync regressions', () => {
       logger: logger.logger,
     })
 
+    await updater.sync()
     await waitForWarnCalls(logger.warnCalls, 1)
 
     expect(logger.warnCalls).toEqual([
       [
-        '[ota] launch sync failed',
+        '[ota] manual sync failed',
         {
           sdkName: OTALAN_CAPACITOR_SDK_NAME,
           sdkVersion: OTALAN_CAPACITOR_SDK_VERSION,

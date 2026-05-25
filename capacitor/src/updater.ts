@@ -29,7 +29,6 @@ import type { LiveUpdateReadyResult } from './live-update'
 
 import type {
   CapacitorSyncResult,
-  CapacitorSyncTrigger,
   CapacitorTransferSource,
   CapacitorUpdaterConfig,
   DeviceIdStorage,
@@ -50,11 +49,12 @@ type UpdateCheckContext = {
 }
 
 type CompatibleCheckField = 'appId' | 'platform' | 'runtimeVersion'
+type SyncCause = 'resume' | 'manual'
 
 export type InitializedCapacitorUpdater = {
   getDeviceId: () => Promise<string | null>
   getUpdater: () => Promise<ReturnType<typeof createUpdater> | null>
-  sync: (trigger?: CapacitorSyncTrigger) => Promise<CapacitorSyncResult | null>
+  sync: () => Promise<CapacitorSyncResult | null>
 }
 
 export async function initializeUpdater(
@@ -125,7 +125,7 @@ export async function initializeUpdater(
   }
 
   function startSync(
-    trigger: CapacitorSyncTrigger,
+    trigger: SyncCause,
     updater: ReturnType<typeof createUpdater>,
   ) {
     if (inFlightSync) {
@@ -152,13 +152,21 @@ export async function initializeUpdater(
     return inFlightSync
   }
 
-  async function sync(trigger: CapacitorSyncTrigger = 'manual') {
-    const updater = await getUpdater()
+  async function runSync(trigger: SyncCause) {
+    const updater = await getUpdater().catch((error) => {
+      logger.warn(`[ota] ${trigger} sync failed`, serializeErrorForLog(error))
+      return null
+    })
+
     if (!updater) {
       return null
     }
 
     return startSync(trigger, updater)
+  }
+
+  async function sync() {
+    return runSync('manual')
   }
 
   async function initialize() {
@@ -175,7 +183,7 @@ export async function initializeUpdater(
       if (onResume && !resumeListenerRegistered) {
         try {
           await CapacitorApp.addListener('resume', () => {
-            void sync('resume')
+            void runSync('resume')
           })
           resumeListenerRegistered = true
         } catch (error) {
@@ -183,7 +191,9 @@ export async function initializeUpdater(
         }
       }
 
-      void startSync('launch', updater)
+      void updater.ready().catch((error) => {
+        logger.warn('Otalan ready() failed.', serializeErrorForLog(error))
+      })
     })().catch((error) => {
       initializePromise = null
       logger.warn('Otalan initializeUpdater() failed.', serializeErrorForLog(error))
@@ -212,11 +222,11 @@ export async function initializeUpdater(
       runtimeVersion: config.runtimeVersion,
       platform,
       deviceId,
-      autoConfirm: config.autoConfirm,
       reloadOnSync: config.reloadOnSync,
       requestTimeoutMs: config.requestTimeoutMs,
       allowInsecureBundleUrls: config.allowInsecureBundleUrls,
       headers: config.headers,
+      onDownloadProgress: config.onDownloadProgress,
       logger,
     }
 
@@ -343,7 +353,10 @@ export function createUpdater(config: CapacitorUpdaterConfig) {
       return buildAppliedResult(config, update, transferSource)
     }
 
-    const transferSource = await ensureBundleIsAvailable(update)
+    const transferSource = await ensureBundleIsAvailable(update, {
+      logger,
+      onDownloadProgress: config.onDownloadProgress,
+    })
 
     await setNextBundle(update.bundleId)
     rememberTransferSource(config, pendingTransferSources, update.bundleId, transferSource)
@@ -371,10 +384,6 @@ async function confirmInstall(
     transferSource: CapacitorTransferSource
   },
 ) {
-  if (config.autoConfirm === false) {
-    return false
-  }
-
   const platform = resolvePlatform(config)
   const runtimeVersion = await resolveRuntimeVersion(config)
   const confirmationStorageKey = buildInstallConfirmationStorageKey({

@@ -8,8 +8,9 @@ import { createUpdater as createUpdaterInternal } from './updater'
 import type { InitializedCapacitorUpdater } from './updater'
 import type {
   CapacitorCheckResult,
+  CapacitorDownloadProgress,
+  CapacitorDownloadProgressListener,
   CapacitorSyncResult,
-  CapacitorSyncTrigger,
   CapacitorTransferSource,
   CapacitorUpdateCompatibility,
   CapacitorUpdaterConfig,
@@ -32,8 +33,9 @@ export async function initializeUpdater(
 
 export type {
   CapacitorCheckResult,
+  CapacitorDownloadProgress,
+  CapacitorDownloadProgressListener,
   CapacitorSyncResult,
-  CapacitorSyncTrigger,
   CapacitorTransferSource,
   CapacitorUpdateCompatibility,
   CapacitorUpdaterConfig,

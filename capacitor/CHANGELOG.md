@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.6.0 - 2026-05-25
+
+### Changed
+
+- Changed `initializeUpdater()` so it initializes the Capacitor updater without starting a launch sync; apps should call `initialized.sync()` when they want to check for and apply updates.
+- Removed the public `sync(trigger?)` argument from the initialized helper API. Sync cause labels are now internal logging details.
+- Removed the public `autoConfirm` opt-out. Install confirmation is best-effort whenever `ready()` observes an eligible Otalan bundle.
+- Started current-bundle `LiveUpdate.ready()` and install confirmation in the background during `initializeUpdater()` without running an update check.
+
+### Added
+
+- Added `onDownloadProgress` to report native Capacitor bundle download progress during SDK-managed downloads.
+
+### Tests
+
+- Added regression coverage for download progress forwarding, listener cleanup, and listener registration failures.
+
 ## 1.5.0 - 2026-05-22
 
 ### Fixed
