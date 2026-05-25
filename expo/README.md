@@ -188,9 +188,10 @@ export async function checkOtalanUpdates() {
 ## Custom Device ID Storage
 
 By default, `initializeUpdater()` creates and persists a stable `deviceId` with AsyncStorage.
-On Android, it prefers `Application.getAndroidId()` from `expo-application` and stores that value,
-replacing older generated `otalan-expo-*` IDs. On iOS, existing stored IDs remain the source of
-truth, and new installs receive a generated persisted ID unless you provide `deviceId`.
+On Android, it treats `Application.getAndroidId()` from `expo-application` as authoritative when
+available, compares storage against that value, and updates storage when they differ. On iOS, it
+uses `Application.getIosIdForVendorAsync()` when available, then falls back to the stored or
+generated SDK ID when iOS returns `null` or the lookup fails.
 
 If you want different storage, provide a custom adapter:
 
@@ -298,6 +299,7 @@ When `enabled` is omitted, `initializeUpdater()`:
 - starts `ready()` once in the background during startup
 - creates and persists a stable `deviceId` unless you provide one
 - prefers and persists the Android platform ID from `expo-application` when available
+- uses the iOS vendor ID from `expo-application` when available
 - exposes the resolved `deviceId` through `getDeviceId()`
 - no-ops outside native iOS and Android
 - no-ops when `expo-updates` is disabled

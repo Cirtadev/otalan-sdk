@@ -15,6 +15,7 @@ export type DeviceIdStorage = {
 
 type ExpoApplicationModule = {
   getAndroidId?: () => string | null
+  getIosIdForVendorAsync?: () => Promise<string | null>
 }
 
 /** @experimental Advisory client-reported transfer metadata. */
@@ -149,16 +150,23 @@ async function getOrCreateDeviceId(
   logger: Pick<Console, 'warn'>,
 ) {
   const platformDeviceId = await getPlatformDeviceId(logger)
+  const storedDeviceId = await readStoredDeviceId(storage, storageKey)
 
   if (platformDeviceId) {
-    await persistPlatformDeviceId(storage, storageKey, platformDeviceId, logger)
+    if (storedDeviceId.error) {
+      logger.warn('Otalan device ID storage read failed.', serializeErrorForLog(storedDeviceId.error))
+    }
+
+    await persistDeviceId(storage, storageKey, platformDeviceId, storedDeviceId.value, logger)
     return platformDeviceId
   }
 
-  const existing = await storage.getItem(storageKey)
+  if (storedDeviceId.error) {
+    throw storedDeviceId.error
+  }
 
-  if (existing) {
-    return existing
+  if (storedDeviceId.value) {
+    return storedDeviceId.value
   }
 
   const nextDeviceId = createDeviceId()
@@ -166,34 +174,57 @@ async function getOrCreateDeviceId(
   return nextDeviceId
 }
 
+async function readStoredDeviceId(storage: DeviceIdStorage, storageKey: string) {
+  try {
+    return {
+      value: await storage.getItem(storageKey),
+      error: null,
+    }
+  } catch (error) {
+    return {
+      value: null,
+      error,
+    }
+  }
+}
+
 async function getPlatformDeviceId(logger: Pick<Console, 'warn'>) {
-  if (Platform.OS !== 'android') {
+  if (Platform.OS !== 'android' && Platform.OS !== 'ios') {
     return null
   }
 
   try {
     const application = await import('expo-application') as ExpoApplicationModule
-    return normalizeDeviceId(application.getAndroidId?.())
+
+    if (Platform.OS === 'android') {
+      return normalizeDeviceId(application.getAndroidId?.())
+    }
+
+    return normalizeDeviceId(await application.getIosIdForVendorAsync?.())
   } catch (error) {
-    logger.warn('Otalan Android device ID lookup failed.', serializeErrorForLog(error))
+    if (Platform.OS === 'android') {
+      logger.warn('Otalan Android device ID lookup failed.', serializeErrorForLog(error))
+    }
+
     return null
   }
 }
 
-async function persistPlatformDeviceId(
+async function persistDeviceId(
   storage: DeviceIdStorage,
   storageKey: string,
   deviceId: string,
+  existingDeviceId: string | null,
   logger: Pick<Console, 'warn'>,
 ) {
-  try {
-    const existing = await storage.getItem(storageKey)
+  if (existingDeviceId === deviceId) {
+    return
+  }
 
-    if (existing !== deviceId) {
-      await storage.setItem(storageKey, deviceId)
-    }
+  try {
+    await storage.setItem(storageKey, deviceId)
   } catch (error) {
-    logger.warn('Otalan Android device ID storage migration failed.', serializeErrorForLog(error))
+    logger.warn('Otalan device ID storage migration failed.', serializeErrorForLog(error))
   }
 }
 
@@ -410,7 +441,7 @@ export async function initializeUpdater(
   config: InitializeExpoUpdaterConfig,
 ): Promise<InitializedExpoUpdater> {
   const logger = config.logger ?? console
-  let deviceId: string | null = config.deviceId || null
+  let deviceId = normalizeDeviceId(config.deviceId)
   let readyPromise: Promise<ExpoReadyResult | null> | null = null
   let updater: ReturnType<typeof createUpdater> | null = null
 

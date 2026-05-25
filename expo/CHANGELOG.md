@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.3 - 2026-05-25
+
+### Fixed
+
+- Prefer `Application.getAndroidId()` for Expo Android device IDs whenever it is available, compare and migrate stored values to that ID, and fall back to storage only when the platform ID cannot be resolved. iOS now uses `Application.getIosIdForVendorAsync()` when available and falls back to storage when it returns `null` or fails.
+
 ## 1.4.2 - 2026-05-25
 
 ### Fixed
