@@ -1,16 +1,17 @@
 # `@otalan/expo`
 
-Otalan confirmation and manual sync helper for Expo apps using `expo-updates`.
+Otalan confirmation, check, and manual sync helper for Expo apps using `expo-updates`.
 
 This package is intentionally small. It does not replace `expo-updates`. Update selection, manifest responses, asset URL delivery, fetching, and reloading are handled by Otalan plus the `expo-updates` runtime.
 
 ## What This Package Does
 
-- exposes `initializeUpdater()` for current-update confirmation and manual sync
+- exposes `initializeUpdater()` for current-update confirmation, check-only availability, and manual sync
 - reads the currently running Expo update metadata
+- exposes `initialized.check()` for manual check without fetch or reload
 - exposes `initialized.sync()` for manual check, fetch, and reload
 - confirms eligible launched OTA updates with advisory transfer source metadata
-- sends the OTA App Key through the `x-api-key` header on that confirm request
+- sends the OTA App Key through the `x-api-key` header on update checks and confirm requests
 
 ## What This Package Does Not Do
 
@@ -101,7 +102,7 @@ export default {
 
 Your configured update service is still responsible for manifest responses and asset URLs. Manifests can include direct immutable CDN asset URLs.
 
-`expo-updates` and the configured Otalan manifest endpoint own update selection and runtime compatibility. This helper can run the manual `expo-updates` check/fetch/reload flow through `initialized.sync()`, observes the already launched update metadata, and confirms it with the Otalan bundle ID from the manifest.
+`expo-updates` and the configured Otalan manifest endpoint own update selection and runtime compatibility. This helper can run a check-only `expo-updates` flow through `initialized.check()` or the manual check/fetch/reload flow through `initialized.sync()`, observes the already launched update metadata, and confirms it with the Otalan bundle ID from the manifest.
 
 Set `checkAutomatically` to `NEVER` for Otalan staged rollouts so JS can attach the resolved device ID before `expo-updates` checks the server. Use an active native policy such as `ON_LOAD` or `WIFI_ONLY` only when rollout selection does not depend on SDK-managed runtime metadata.
 
@@ -113,7 +114,7 @@ OTA Publish Key values use the `otalan_ci_...` token format and are for release 
 
 Partial rollouts for Expo require a stable device ID on Otalan update checks. `@otalan/expo` creates and persists that ID, then writes it to Expo update extra params as `otalan-device-id` before checking for updates. App code does not need to know or set an Otalan device header.
 
-`initialized.sync()` sets the OTA App Key request header before checking for updates. Expo requires runtime-overridden header keys to already be declared in `updates.requestHeaders` in native config.
+`initialized.check()` and `initialized.sync()` set the OTA App Key request header before checking for updates. Expo requires runtime-overridden header keys to already be declared in `updates.requestHeaders` in native config.
 
 ## Quick Start
 
@@ -170,7 +171,7 @@ Use the configuration and `syncOtalanUpdates()` sample above when rollout eligib
 
 ## Update Flow
 
-`@otalan/expo` imports `expo-updates` to read launch metadata such as `Updates.isEnabled`, `Updates.manifest`, `Updates.isEmbeddedLaunch`, `Updates.isEmergencyLaunch`, `Updates.runtimeVersion`, and `Updates.updateId`. The initialized helper's `sync()` method sets Otalan request context, then calls `Updates.checkForUpdateAsync()`, `Updates.fetchUpdateAsync()`, and `Updates.reloadAsync()`.
+`@otalan/expo` imports `expo-updates` to read launch metadata such as `Updates.isEnabled`, `Updates.manifest`, `Updates.isEmbeddedLaunch`, `Updates.isEmergencyLaunch`, `Updates.runtimeVersion`, and `Updates.updateId`. The initialized helper's `check()` method sets Otalan request context, then calls `Updates.checkForUpdateAsync()` and returns `{ updateAvailable }`. The initialized helper's `sync()` method uses the same request context, then calls `Updates.checkForUpdateAsync()`, `Updates.fetchUpdateAsync()`, and `Updates.reloadAsync()`.
 
 Unlike `@otalan/capacitor`, `@otalan/expo` does not expose an Otalan `onDownloadProgress` callback because the download is still owned by `expo-updates`. For Expo download UI, listen to `expo-updates` download state directly. In React components, `useUpdates().downloadProgress` reports progress from `0` to `1` while `useUpdates().isDownloading` is true.
 
@@ -240,6 +241,7 @@ Config:
 
 Returns a low-level Expo updater:
 
+- `check()`: returns `Promise<ExpoCheckResult>`
 - `getCurrentUpdate()`: returns `Promise<ExpoReadyResult>`
 - `confirmCurrentUpdate()`: returns `Promise<ExpoReadyResult>`
 - `ready()`: returns `Promise<ExpoReadyResult>`
@@ -259,6 +261,7 @@ Returns:
 
 - `getDeviceId()`: resolves the stable device ID or `null` when no updater is enabled and no explicit ID was provided
 - `getUpdater()`: returns the helper or `null`
+- `check()`: checks availability without fetching or reloading and returns `Promise<ExpoCheckResult>`
 - `ready()`: awaits current-update confirmation and returns `ExpoReadyResult | null`
 - `sync()`: runs a deduplicated Expo update check, fetches an available update, reloads the app, and returns `Promise<boolean>`
 
@@ -269,6 +272,12 @@ Returns `Promise<string | null>`.
 ### `initialized.getUpdater()`
 
 Returns the low-level updater from `createUpdater(config)`, or `null` when the initialized helper is disabled.
+
+### `await initialized.check()`
+
+Sets the OTA App Key request header, writes the resolved Otalan device ID to Expo update extra params, then calls `Updates.checkForUpdateAsync()` without fetching or reloading.
+
+Returns `Promise<ExpoCheckResult>`. It resolves `{ updateAvailable: true }` when Expo reports an available update or rollback-to-embedded response. It resolves `{ updateAvailable: false }` when updates are disabled, no update is available, or an Expo update API call fails.
 
 ### `await initialized.ready()`
 
@@ -301,6 +310,12 @@ Returns `Promise<ExpoReadyResult>`:
 - `runtimeVersion`
 - `transferSource` (experimental)
 - `updateId`
+
+### `await updater.check()`
+
+Sets the OTA App Key request header, writes the configured stable device ID to Expo update extra params, then calls `Updates.checkForUpdateAsync()` without fetching or reloading.
+
+Returns `Promise<ExpoCheckResult>`.
 
 ### `await updater.confirmCurrentUpdate()`
 
@@ -335,9 +350,13 @@ Returns `Promise<ExpoReadyResult>`. If confirmation fails, it logs a warning and
 - `transferSource`: experimental transfer metadata when confirmation succeeds
 - `updateId`: current Expo update ID when available
 
+`ExpoCheckResult`:
+
+- `updateAvailable`: whether Expo reported an available update or rollback-to-embedded response
+
 ## Network Behavior
 
-The SDK sends the OTA App Key in `x-api-key` on confirmation requests. Otalan can count an update as served when the Expo manifest endpoint selects an update; install confirmations are a separate client-reported signal that the device successfully launched that bundle. Confirmations include the app identifier, platform, channel, Otalan bundle ID, runtime version, stable device ID, and `transferSource`. Confirmation requests time out after `requestTimeoutMs`, defaulting to 15 seconds.
+The SDK sends the OTA App Key in `x-api-key` on update checks and confirmation requests. Otalan can count an update as served when the Expo manifest endpoint selects an update; install confirmations are a separate client-reported signal that the device successfully launched that bundle. Confirmations include the app identifier, platform, channel, Otalan bundle ID, runtime version, stable device ID, and `transferSource`. Confirmation requests time out after `requestTimeoutMs`, defaulting to 15 seconds.
 
 `transferSource` is either `downloaded` or `cached` across Otalan mobile SDKs. This package always sends `downloaded` because it does not control update fetching and cannot confidently detect cached Expo launches. Treat this field as advisory client-reported metadata only.
 
@@ -347,7 +366,7 @@ Asset requests do not depend on this SDK or SDK-provided request headers.
 
 This SDK does not add SDK-side SHA verification for Expo assets. Asset integrity checks belong to the Expo runtime and manifest metadata; the server manifest must still provide the correct asset hash and key values.
 
-Only active Otalan apps are eligible for Expo updates and install confirmations. If update traffic is unavailable for the app, `ready()` logs confirmation failures and returns the current update metadata.
+Only active Otalan apps are eligible for Expo updates and install confirmations. If update traffic is unavailable for the app, `check()` or `sync()` logs the update failure and returns a false result; `ready()` logs confirmation failures and returns the current update metadata.
 
 ## Notes
 

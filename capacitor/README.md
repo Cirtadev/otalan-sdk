@@ -78,7 +78,7 @@ VITE_OTALAN_CHANNEL=production
 VITE_OTALAN_RUNTIME_VERSION=1.0.0
 ```
 
-Create the updater when your app is ready to manage OTA updates, then reuse it for later checks:
+Create the updater when your app is ready to manage OTA updates, then reuse it for later checks or syncs:
 
 ```ts
 import { initializeUpdater, type InitializedCapacitorUpdater } from '@otalan/capacitor'
@@ -184,6 +184,7 @@ When `enabled` is omitted, `initializeUpdater()`:
 - can register a resume listener
 - logs device ID storage failures and returns a no-op updater
 - logs resume listener registration failures and still returns the initialized helper
+- deduplicates concurrent check calls
 - deduplicates concurrent sync calls
 - swallows sync failures and logs warnings instead
 - keeps install confirmation best-effort during sync so a slow confirmation request cannot block the next update check
@@ -196,7 +197,7 @@ If manual or resume sync logs `[ota] ... sync failed`, the failure happened afte
 
 If the message says `failed before response`, the request did not receive an HTTP response. Check that `apiUrl` is reachable from the device, uses a trusted certificate, and is allowed by platform HTTP security settings.
 
-`initializeUpdater()` resolves after setup and does not start launch update check, download, staging, or reload work. It may send a best-effort install confirmation for the currently launched bundle. Call `initialized.sync()` when your app should check for, download, stage, and optionally reload an update. If `onResume` is enabled, the registered resume listener also runs a deduplicated sync when the app resumes.
+`initializeUpdater()` resolves after setup and does not start launch update check, download, staging, or reload work. It may send a best-effort install confirmation for the currently launched bundle. Call `initialized.check()` when your app should check availability without applying an update, or `initialized.sync()` when it should check, download, stage, and optionally reload. If `onResume` is enabled, the registered resume listener also runs a deduplicated sync when the app resumes.
 
 ## API
 
@@ -241,6 +242,7 @@ Returns:
 
 - `getDeviceId()`: resolves the stable device ID or `null` when no updater is enabled and no explicit ID was provided
 - `getUpdater()`: resolves the low-level updater or `null`
+- `check()`: checks availability without downloading, staging, or reloading and returns `CapacitorCheckResult | null`
 - `sync()`: runs a deduplicated sync and returns `CapacitorSyncResult | null`
 
 ### `await initialized.getDeviceId()`
@@ -250,6 +252,12 @@ Returns `Promise<string | null>`.
 ### `await initialized.getUpdater()`
 
 Returns the low-level updater from `createUpdater(config)`, or `null` when the initialized helper is disabled or the platform is unsupported.
+
+### `await initialized.check()`
+
+Runs a deduplicated update check through the low-level updater without downloading, staging, or reloading an update.
+
+Returns `Promise<CapacitorCheckResult | null>`. The initialized helper logs setup or check failures and returns `null`, so normal app code can handle a skipped or failed check without wrapping this call in `try`/`catch`. Low-level `createUpdater().check()` still rejects on API or validation failures.
 
 ### `await initialized.sync()`
 
@@ -337,13 +345,13 @@ Returns `Promise<CapacitorSyncResult>`.
 
 ## Network Behavior
 
-The SDK sends the OTA App Key with Otalan requests. Update checks include `appId`, `platform`, `channel`, `runtimeVersion`, `currentBundleId` when available, and the stable `deviceId`. Successful check responses must include matching `appId`, `platform`, `runtimeVersion`, `bundleId`, `downloadUrl`, and `checksum`; the SDK validates those fields before trusting `updateAvailable` or using any selected bundle. Missing or mismatched compatibility metadata rejects low-level `check()` or `sync()` calls; initialized helper syncs log the failure and leave the host app running. Otalan can count an update as served when the check response selects a bundle with `downloadUrl`; install confirmations are a separate client-reported signal that the device successfully launched or applied that bundle. Install confirmations include the app identifier, platform, channel, runtime version, bundle ID, stable device ID, and `transferSource`.
+The SDK sends the OTA App Key with Otalan requests. Update checks include `appId`, `platform`, `channel`, `runtimeVersion`, `currentBundleId` when available, and the stable `deviceId`. Successful check responses must include matching `appId`, `platform`, `runtimeVersion`, `bundleId`, `downloadUrl`, and `checksum`; the SDK validates those fields before trusting `updateAvailable` or using any selected bundle. Missing or mismatched compatibility metadata rejects low-level `check()` or `sync()` calls; initialized helper checks and syncs log the failure and leave the host app running. Otalan can count an update as served when the check response selects a bundle with `downloadUrl`; install confirmations are a separate client-reported signal that the device successfully launched or applied that bundle. Install confirmations include the app identifier, platform, channel, runtime version, bundle ID, stable device ID, and `transferSource`.
 
 Otalan API requests time out after `requestTimeoutMs`, defaulting to 15 seconds. Bundle downloads are still performed by `@capawesome/capacitor-live-update`, but the SDK only passes HTTPS `downloadUrl` values to the plugin by default. Download progress is forwarded from the plugin's `downloadBundleProgress` event when `onDownloadProgress` is configured. Set `allowInsecureBundleUrls: true` only for local development environments that intentionally serve bundles over plain HTTP.
 
 `transferSource` is either `downloaded` or `cached`. Treat it as advisory client-reported metadata only.
 
-Only active Otalan apps are eligible for OTA checks and install confirmations. If update traffic is unavailable for the app, initialized helper syncs log the rejected request and leave the host app running; low-level `check()` or `sync()` calls reject with the API error.
+Only active Otalan apps are eligible for OTA checks and install confirmations. If update traffic is unavailable for the app, initialized helper checks and syncs log the rejected request and leave the host app running; low-level `check()` or `sync()` calls reject with the API error.
 
 ## Notes
 

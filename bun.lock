@@ -16,7 +16,7 @@
     },
     "capacitor": {
       "name": "@otalan/capacitor",
-      "version": "1.6.2",
+      "version": "1.7.0",
       "peerDependencies": {
         "@capacitor/app": ">=7 <9",
         "@capacitor/core": ">=7 <9",
@@ -25,7 +25,7 @@
     },
     "expo": {
       "name": "@otalan/expo",
-      "version": "1.5.1",
+      "version": "1.6.0",
       "dependencies": {
         "@react-native-async-storage/async-storage": "^2.2.0",
       },

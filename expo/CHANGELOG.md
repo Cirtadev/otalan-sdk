@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.0 - 2026-05-27
+
+### Added
+
+- Added `check()` to initialized and low-level Expo updaters for availability checks that do not fetch or reload updates.
+
 ## 1.5.1 - 2026-05-25
 
 ### Changed

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.0 - 2026-05-27
+
+### Added
+
+- Added `initialized.check()` to check Otalan availability without downloading, staging, or reloading an update.
+
 ## 1.6.2 - 2026-05-25
 
 ### Changed

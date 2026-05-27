@@ -28,6 +28,7 @@ import {
 import type { LiveUpdateReadyResult } from './live-update'
 
 import type {
+  CapacitorCheckResult,
   CapacitorSyncResult,
   CapacitorTransferSource,
   CapacitorUpdaterConfig,
@@ -54,6 +55,7 @@ type SyncCause = 'resume' | 'manual'
 export type InitializedCapacitorUpdater = {
   getDeviceId: () => Promise<string | null>
   getUpdater: () => Promise<ReturnType<typeof createUpdater> | null>
+  check: () => Promise<CapacitorCheckResult | null>
   sync: () => Promise<CapacitorSyncResult | null>
 }
 
@@ -67,6 +69,7 @@ export async function initializeUpdater(
   let deviceIdPromise: Promise<string | null> | null = null
   let initializePromise: Promise<void> | null = null
   let updaterPromise: Promise<ReturnType<typeof createUpdater> | null> | null = null
+  let inFlightCheck: Promise<CapacitorCheckResult | null> | null = null
   let inFlightSync: Promise<CapacitorSyncResult | null> | null = null
   let resumeListenerRegistered = false
 
@@ -150,6 +153,34 @@ export async function initializeUpdater(
     })
 
     return inFlightSync
+  }
+
+  function startCheck(updater: ReturnType<typeof createUpdater>) {
+    if (inFlightCheck) {
+      return inFlightCheck
+    }
+
+    inFlightCheck = updater.check().catch((error) => {
+      logger.warn('[ota] manual check failed', serializeErrorForLog(error))
+      return null
+    }).finally(() => {
+      inFlightCheck = null
+    })
+
+    return inFlightCheck
+  }
+
+  async function check() {
+    const updater = await getUpdater().catch((error) => {
+      logger.warn('[ota] manual check failed', serializeErrorForLog(error))
+      return null
+    })
+
+    if (!updater) {
+      return null
+    }
+
+    return startCheck(updater)
   }
 
   async function runSync(trigger: SyncCause) {
@@ -236,6 +267,7 @@ export async function initializeUpdater(
   const updater = {
     getDeviceId,
     getUpdater,
+    check,
     sync,
   }
 

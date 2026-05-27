@@ -44,6 +44,10 @@ export type ExpoReadyResult = {
   updateId?: string
 }
 
+export type ExpoCheckResult = {
+  updateAvailable: boolean
+}
+
 export type InitializeExpoUpdaterConfig = Omit<ExpoUpdaterConfig, 'deviceId' | 'logger'> & {
   deviceId?: string
   deviceIdStorage?: DeviceIdStorage
@@ -55,6 +59,7 @@ export type InitializeExpoUpdaterConfig = Omit<ExpoUpdaterConfig, 'deviceId' | '
 export type InitializedExpoUpdater = {
   getDeviceId: () => Promise<string | null>
   getUpdater: () => ReturnType<typeof createUpdater> | null
+  check: () => Promise<ExpoCheckResult>
   ready: () => Promise<ExpoReadyResult | null>
   sync: () => Promise<boolean>
 }
@@ -319,6 +324,33 @@ function summarizeExpoUpdateCheckResult(result: {
   }
 }
 
+function hasAvailableExpoUpdate(result: {
+  isAvailable?: boolean
+  isRollBackToEmbedded?: boolean
+}) {
+  return Boolean(result.isAvailable || result.isRollBackToEmbedded)
+}
+
+function buildExpoCheckResult(result: {
+  isAvailable?: boolean
+  isRollBackToEmbedded?: boolean
+}): ExpoCheckResult {
+  return {
+    updateAvailable: hasAvailableExpoUpdate(result),
+  }
+}
+
+async function checkExpoUpdates(
+  config: Pick<ExpoUpdaterConfig, 'apiKey'>,
+  deviceId: string,
+  logger: Pick<Console, 'warn'>,
+) {
+  await setExpoUpdateDeviceIdExtraParam(deviceId, logger)
+  setExpoUpdateRequestHeaders(config, logger)
+
+  return Updates.checkForUpdateAsync()
+}
+
 function summarizeExpoUpdateFetchResult(result: {
   isNew?: boolean
   isRollBackToEmbedded?: boolean
@@ -543,6 +575,7 @@ export async function initializeUpdater(
 ): Promise<InitializedExpoUpdater> {
   const logger = config.logger ?? console
   let deviceId = normalizeDeviceId(config.deviceId)
+  let checkPromise: Promise<ExpoCheckResult> | null = null
   let readyPromise: Promise<ExpoReadyResult | null> | null = null
   let syncPromise: Promise<boolean> | null = null
   let updater: ReturnType<typeof createUpdater> | null = null
@@ -610,6 +643,42 @@ export async function initializeUpdater(
     return readyPromise
   }
 
+  function buildSkippedCheckResult() {
+    return {
+      updateAvailable: false,
+    } satisfies ExpoCheckResult
+  }
+
+  async function runCheck() {
+    if (!isEnabled() || !deviceId || !updater) {
+      logger.warn('Otalan Expo check skipped.', buildExpoUpdatesSyncLogContext({
+        reason: resolveExpoSyncUnavailableReason(config, deviceId, updater),
+        hasDeviceId: Boolean(deviceId),
+        hasUpdater: Boolean(updater),
+      }))
+      return buildSkippedCheckResult()
+    }
+
+    return updater.check()
+  }
+
+  async function check() {
+    if (checkPromise) {
+      return checkPromise
+    }
+
+    checkPromise = runCheck().catch((error) => {
+      logger.warn('Otalan Expo check failed.', buildExpoUpdatesSyncLogContext({
+        error: serializeErrorForLog(error),
+      }))
+      return buildSkippedCheckResult()
+    }).finally(() => {
+      checkPromise = null
+    })
+
+    return checkPromise
+  }
+
   async function runSync() {
     if (!isEnabled() || !deviceId || !updater) {
       logger.warn('Otalan Expo sync skipped.', buildExpoUpdatesSyncLogContext({
@@ -620,11 +689,8 @@ export async function initializeUpdater(
       return false
     }
 
-    await setExpoUpdateDeviceIdExtraParam(deviceId, logger)
-    setExpoUpdateRequestHeaders(config, logger)
-
-    const update = await Updates.checkForUpdateAsync()
-    if (!update.isAvailable && !update.isRollBackToEmbedded) {
+    const update = await checkExpoUpdates(config, deviceId, logger)
+    if (!hasAvailableExpoUpdate(update)) {
       logger.warn('Otalan Expo sync found no available update.', buildExpoUpdatesSyncLogContext({
         update: summarizeExpoUpdateCheckResult(update),
       }))
@@ -663,6 +729,7 @@ export async function initializeUpdater(
   const managedUpdater = {
     getDeviceId,
     getUpdater,
+    check,
     ready,
     sync,
   }
@@ -676,6 +743,11 @@ export function createUpdater(config: ExpoUpdaterConfig) {
   const deviceId = requireDeviceId(config)
   let confirmedBundleKey: string | null = null
   const confirmingBundlePromises = new Map<string, Promise<ExpoReadyResult>>()
+
+  async function check(): Promise<ExpoCheckResult> {
+    const update = await checkExpoUpdates(config, deviceId, logger)
+    return buildExpoCheckResult(update)
+  }
 
   async function getCurrentUpdate(): Promise<ExpoReadyResult> {
     if (!Updates.isEnabled) {
@@ -792,6 +864,7 @@ export function createUpdater(config: ExpoUpdaterConfig) {
   }
 
   return {
+    check,
     getCurrentUpdate,
     confirmCurrentUpdate,
     ready,

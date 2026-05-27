@@ -3,7 +3,7 @@
 Monorepo for the Otalan mobile OTA SDK packages:
 
 - `@otalan/capacitor`: full Otalan OTA client for Capacitor apps
-- `@otalan/expo`: confirmation and manual sync helper for Expo apps using `expo-updates`
+- `@otalan/expo`: confirmation, check, and manual sync helper for Expo apps using `expo-updates`
 
 Website: [otalan.com](https://otalan.com)
 
@@ -27,6 +27,7 @@ Use this when your app uses Expo with `expo-updates` and you only need:
 
 - install confirmation for launched OTA updates
 - current update metadata
+- check-only update availability
 - a small `initializeUpdater()` helper with manual sync
 
 It delegates update checks, fetching, and reloads to `expo-updates`; it does not replace Expo's runtime or report SDK-managed download progress itself.
@@ -43,19 +44,19 @@ Otalan serves OTA traffic only for apps that are active in Otalan. If update tra
 
 Capacitor update checks include `appId`, `platform`, `channel`, `runtimeVersion`, `currentBundleId` when available, and stable `deviceId`. Successful `/capacitor/check` responses must include matching `appId`, `platform`, and `runtimeVersion`; `@otalan/capacitor` validates those values before trusting `updateAvailable` or using any selected bundle.
 
-Expo update selection is handled by `expo-updates` and the Otalan manifest endpoint. `@otalan/expo` can run the manual `expo-updates` check/fetch/reload flow through `initialized.sync()`, and it observes and confirms the launched update with its app, platform, channel, runtime version, Otalan bundle ID, and device ID context.
+Expo update selection is handled by `expo-updates` and the Otalan manifest endpoint. `@otalan/expo` can run a check-only `expo-updates` flow through `initialized.check()` or the manual check/fetch/reload flow through `initialized.sync()`, and it observes and confirms the launched update with its app, platform, channel, runtime version, Otalan bundle ID, and device ID context.
 
 ## Helper Enablement
 
 When `enabled` is omitted, both helpers auto-enable only when their runtime and required config are available. Pass `enabled: false` to force a no-op. Pass `enabled: true` only when your app has its own gate, because it bypasses the helper's default config checks and can surface missing or invalid config as request failures when helper network work runs. Native iOS and Android platform validation still applies.
 
-Both helpers start current-bundle confirmation in the background after setup. The Capacitor helper does not run a launch update sync; updates are checked only when `initialized.sync()` is called or when the configured resume listener fires.
+Both helpers start current-bundle confirmation in the background after setup. The Capacitor helper does not run a launch update sync; updates are checked only when `initialized.check()` or `initialized.sync()` is called, or when the configured resume listener fires.
 
 ## Device IDs
 
 Both package helpers can create and persist a stable device ID unless the app provides one. Low-level `createUpdater()` APIs still require an explicit `deviceId`. Expo Android apps treat `Application.getAndroidId()` as authoritative when available and migrate storage to it; Expo iOS apps use the vendor ID when available and otherwise fall back to the stored SDK ID.
 
-Expo apps should call `initialized.sync()` for manual update checks. The SDK resolves the stable device ID, passes it to Expo update requests through Expo extra params for Otalan rollout bucketing, sets the OTA App Key request header, then calls `expo-updates` check, fetch, and reload APIs. App code does not need to know or set an Otalan device header.
+Expo apps can call `initialized.check()` to check availability without fetching, or `initialized.sync()` to check, fetch, and reload. The SDK resolves the stable device ID, passes it to Expo update requests through Expo extra params for Otalan rollout bucketing, and sets the OTA App Key request header before calling `expo-updates`. App code does not need to know or set an Otalan device header.
 
 Capacitor checks go through `@otalan/capacitor`, so the SDK sends the resolved ID itself.
 
@@ -144,9 +145,10 @@ export async function syncOtalanUpdates() {
 
 `@otalan/capacitor`:
 
-- `initializeUpdater(config)`: returns an initialized helper with `getDeviceId()`, `getUpdater()`, and `sync()`
+- `initializeUpdater(config)`: returns an initialized helper with `getDeviceId()`, `getUpdater()`, `check()`, and `sync()`
 - `initialized.getDeviceId()`: returns `Promise<string | null>`
 - `initialized.getUpdater()`: returns a promise resolving to the low-level updater or `null`
+- `initialized.check()`: returns `Promise<CapacitorCheckResult | null>`
 - `initialized.sync()`: returns `Promise<CapacitorSyncResult | null>`
 - `createUpdater(config)`: returns a low-level updater with `ready()`, `getCurrentBundleId()`, `check()`, and `sync()`
 - `updater.ready()`: returns the Live Update ready result
@@ -156,12 +158,14 @@ export async function syncOtalanUpdates() {
 
 `@otalan/expo`:
 
-- `initializeUpdater(config)`: returns an initialized helper with `getDeviceId()`, `getUpdater()`, `ready()`, and `sync()`
+- `initializeUpdater(config)`: returns an initialized helper with `getDeviceId()`, `getUpdater()`, `check()`, `ready()`, and `sync()`
 - `initialized.getDeviceId()`: returns `Promise<string | null>`
 - `initialized.getUpdater()`: returns the low-level updater or `null`
+- `initialized.check()`: returns `Promise<ExpoCheckResult>`
 - `initialized.ready()`: returns `Promise<ExpoReadyResult | null>`
 - `initialized.sync()`: returns `Promise<boolean>`
-- `createUpdater(config)`: returns a low-level updater with `getCurrentUpdate()`, `confirmCurrentUpdate()`, and `ready()`
+- `createUpdater(config)`: returns a low-level updater with `check()`, `getCurrentUpdate()`, `confirmCurrentUpdate()`, and `ready()`
+- `updater.check()`: returns `Promise<ExpoCheckResult>`
 - `updater.getCurrentUpdate()`: returns `Promise<ExpoReadyResult>`
 - `updater.confirmCurrentUpdate()`: returns `Promise<ExpoReadyResult>`
 - `updater.ready()`: returns `Promise<ExpoReadyResult>`
