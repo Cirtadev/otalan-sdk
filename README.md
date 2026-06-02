@@ -46,6 +46,16 @@ Capacitor update checks include `appId`, `platform`, `channel`, `runtimeVersion`
 
 Expo update selection is handled by `expo-updates` and the Otalan manifest endpoint. `@otalan/expo` can run a check-only `expo-updates` flow through `initialized.check()` or the manual check/fetch/reload flow through `initialized.sync()`, and it observes and confirms the launched update with its app, platform, channel, runtime version, Otalan bundle ID, and device ID context.
 
+## Update Event Reporting
+
+Both helpers report update failure and telemetry events to Otalan in the background. Capacitor reports to `/capacitor/report-update-event`; Expo reports to `/expo/report-update-event`. These calls use the same OTA App Key auth, headers, and timeout settings as check and confirm requests, and failures in the report request itself do not change app behavior.
+
+Reported events include `eventId`, app/platform/channel/runtime/device context, optional `currentBundleId` and `targetBundleId`, `phase`, `category`, `errorType`, `errorMessage`, and SDK name/version. Categories are constrained by phase: `check` maps to `check_failed`, `download`/`fetch`/`stage`/`reload` map to `apply_failed`, and `confirm` maps to `telemetry_failed`.
+
+The SDK generates an `eventId` for each report so the API can dedupe retries or repeated sends. Server-side fallback dedupe may use a derived key such as API key, app, platform, channel, device, phase, target bundle, and error type, and should stay time-bounded so recurring client errors are not collapsed forever.
+
+Dashboard metrics should keep these streams separate. Failed checks are diagnostics. Confirmation failures are telemetry failures, not failed updates. Apply failures should only affect served-update metrics when `targetBundleId` is present and the API can tie the event to a served update context; unmatched apply failures belong in diagnostics.
+
 ## Helper Enablement
 
 When `enabled` is omitted, both helpers auto-enable only when their runtime and required config are available. Pass `enabled: false` to force a no-op. Pass `enabled: true` only when your app has its own gate, because it bypasses the helper's default config checks and can surface missing or invalid config as request failures when helper network work runs. Native iOS and Android platform validation still applies.

@@ -53,6 +53,8 @@ const expoState = {
   fetchCalls: 0,
   reloadCalls: 0,
   checkError: null as Error | null,
+  fetchError: null as Error | null,
+  reloadError: null as Error | null,
   checkResult: {
     isAvailable: true,
     isRollBackToEmbedded: false,
@@ -150,10 +152,19 @@ function applyModuleMocks() {
     },
     fetchUpdateAsync: async () => {
       expoState.fetchCalls += 1
+
+      if (expoState.fetchError) {
+        throw expoState.fetchError
+      }
+
       return expoState.fetchResult
     },
     reloadAsync: async () => {
       expoState.reloadCalls += 1
+
+      if (expoState.reloadError) {
+        throw expoState.reloadError
+      }
     },
   }))
 
@@ -259,6 +270,8 @@ beforeEach(() => {
   expoState.fetchCalls = 0
   expoState.reloadCalls = 0
   expoState.checkError = null
+  expoState.fetchError = null
+  expoState.reloadError = null
   expoState.checkResult = {
     isAvailable: true,
     isRollBackToEmbedded: false,
@@ -432,7 +445,13 @@ describe('@otalan/expo', () => {
   })
 
   test('ready logs serializable confirmation errors for native consoles', async () => {
-    fetchState.handler = async () => Response.json({ message: 'app is archived' }, { status: 403 })
+    fetchState.handler = async (url) => {
+      if (url.endsWith('/expo/report-update-event')) {
+        return new Response(null, { status: 204 })
+      }
+
+      return Response.json({ message: 'app is archived' }, { status: 403 })
+    }
 
     const logger = createLogger()
     const {
@@ -737,6 +756,7 @@ describe('@otalan/expo', () => {
       apiKey: 'otalan_ota_xxx',
       appId: 'com.example.app',
       channel: 'production',
+      deviceId: 'device-1',
       logger: logger.logger,
     })
 
@@ -848,10 +868,12 @@ describe('@otalan/expo', () => {
       apiKey: 'otalan_ota_xxx',
       appId: 'com.example.app',
       channel: 'production',
+      deviceId: 'device-1',
       logger: logger.logger,
     })
 
     await expect(updater.sync()).resolves.toBe(false)
+    await waitForFetchCalls(1)
 
     expect(logger.warnCalls).toEqual([
       [
@@ -866,8 +888,139 @@ describe('@otalan/expo', () => {
         }),
       ],
     ])
+    expect(fetchState.calls[0]?.url).toBe('https://api.otalan.com/expo/report-update-event')
+    expect(readJsonBody(fetchState.calls[0]!)).toMatchObject({
+      appId: 'com.example.app',
+      platform: 'ios',
+      channel: 'production',
+      runtimeVersion: '1.0.0',
+      deviceId: 'device-1',
+      currentBundleId: 'bundle-1',
+      phase: 'check',
+      category: 'check_failed',
+      errorType: 'expo-updates-error',
+      errorMessage: 'check failed',
+      sdkName: OTALAN_EXPO_SDK_NAME,
+      sdkVersion: OTALAN_EXPO_SDK_VERSION,
+    })
+    expect(readJsonBody(fetchState.calls[0]!).eventId).toEqual(expect.any(String))
     expect(expoState.fetchCalls).toBe(0)
     expect(expoState.reloadCalls).toBe(0)
+  })
+
+  test('initialized sync reports Expo fetch failures as apply failures with target context', async () => {
+    expoState.isEmbeddedLaunch = true
+    expoState.checkResult = {
+      isAvailable: true,
+      isRollBackToEmbedded: false,
+      manifest: createExpoManifest({
+        metadata: {
+          bundleId: 'bundle-2',
+          channel: 'production',
+        },
+        extra: {
+          otalan: {
+            bundleId: 'bundle-2',
+            runtimeVersion: '1.0.0',
+          },
+        },
+      }),
+    } as typeof expoState.checkResult
+    expoState.fetchError = new Error('fetch failed')
+
+    const {
+      OTALAN_EXPO_SDK_NAME,
+      OTALAN_EXPO_SDK_VERSION,
+      initializeUpdater,
+    } = await loadSdk()
+    const logger = createLogger()
+    const updater = await initializeUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      deviceId: 'device-1',
+      logger: logger.logger,
+    })
+
+    await expect(updater.sync()).resolves.toBe(false)
+    await waitForFetchCalls(1)
+
+    expect(fetchState.calls[0]?.url).toBe('https://api.otalan.com/expo/report-update-event')
+    expect(readJsonBody(fetchState.calls[0]!)).toMatchObject({
+      appId: 'com.example.app',
+      platform: 'ios',
+      channel: 'production',
+      runtimeVersion: '1.0.0',
+      deviceId: 'device-1',
+      currentBundleId: 'bundle-1',
+      targetBundleId: 'bundle-2',
+      phase: 'fetch',
+      category: 'apply_failed',
+      errorType: 'fetch-failed',
+      errorMessage: 'fetch failed',
+      sdkName: OTALAN_EXPO_SDK_NAME,
+      sdkVersion: OTALAN_EXPO_SDK_VERSION,
+    })
+    expect(expoState.reloadCalls).toBe(0)
+  })
+
+  test('initialized sync reports Expo reload failures as apply failures with target context', async () => {
+    expoState.isEmbeddedLaunch = true
+    expoState.checkResult = {
+      isAvailable: true,
+      isRollBackToEmbedded: false,
+      manifest: createExpoManifest({
+        metadata: {
+          bundleId: 'bundle-2',
+          channel: 'production',
+        },
+        extra: {
+          otalan: {
+            bundleId: 'bundle-2',
+            runtimeVersion: '1.0.0',
+          },
+        },
+      }),
+    } as typeof expoState.checkResult
+    expoState.reloadError = new Error('reload failed')
+
+    const {
+      OTALAN_EXPO_SDK_NAME,
+      OTALAN_EXPO_SDK_VERSION,
+      initializeUpdater,
+    } = await loadSdk()
+    const logger = createLogger()
+    const updater = await initializeUpdater({
+      apiUrl: 'https://api.otalan.com',
+      apiKey: 'otalan_ota_xxx',
+      appId: 'com.example.app',
+      channel: 'production',
+      deviceId: 'device-1',
+      logger: logger.logger,
+    })
+
+    await expect(updater.sync()).resolves.toBe(false)
+    await waitForFetchCalls(1)
+
+    expect(fetchState.calls[0]?.url).toBe('https://api.otalan.com/expo/report-update-event')
+    expect(readJsonBody(fetchState.calls[0]!)).toMatchObject({
+      appId: 'com.example.app',
+      platform: 'ios',
+      channel: 'production',
+      runtimeVersion: '1.0.0',
+      deviceId: 'device-1',
+      currentBundleId: 'bundle-1',
+      targetBundleId: 'bundle-2',
+      phase: 'reload',
+      category: 'apply_failed',
+      errorType: 'reload-failed',
+      errorMessage: 'reload failed',
+      sdkName: OTALAN_EXPO_SDK_NAME,
+      sdkVersion: OTALAN_EXPO_SDK_VERSION,
+    })
+    expect(expoState.fetchCalls).toBe(1)
+    expect(expoState.reloadCalls).toBe(1)
   })
 
   test('initializeUpdater no-ops when required config is empty', async () => {

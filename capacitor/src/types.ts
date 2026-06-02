@@ -37,6 +37,40 @@ export type CapacitorDownloadProgress = {
 
 export type CapacitorDownloadProgressListener = (event: CapacitorDownloadProgress) => void
 
+export type CapacitorUpdateEventPhase = 'check' | 'download' | 'stage' | 'reload' | 'confirm'
+
+export type CapacitorUpdateEventCategory = 'check_failed' | 'apply_failed' | 'telemetry_failed'
+
+export type CapacitorUpdateEventErrorType =
+  | 'network'
+  | 'timeout'
+  | 'api-error'
+  | 'invalid-update-response'
+  | 'incompatible-update'
+  | 'invalid-download-url'
+  | 'download-failed'
+  | 'stage-failed'
+  | 'reload-failed'
+  | 'confirm-failed'
+  | 'unknown'
+
+export type CapacitorUpdateEventReport = {
+  eventId: string
+  appId: string
+  platform: OtaPlatform
+  channel: string
+  runtimeVersion?: string
+  deviceId?: string
+  currentBundleId?: string
+  targetBundleId?: string
+  phase: CapacitorUpdateEventPhase
+  category: CapacitorUpdateEventCategory
+  errorType: CapacitorUpdateEventErrorType
+  errorMessage: string
+  sdkName: string
+  sdkVersion: string
+}
+
 export type CapacitorUpdaterConfig = {
   apiUrl: string
   apiKey: string

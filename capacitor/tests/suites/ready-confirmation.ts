@@ -153,8 +153,22 @@ describe('@otalan/capacitor ready confirmation behavior', () => {
     await updater.ready()
     await updater.ready()
 
-    expect(fetchState.calls).toHaveLength(2)
+    expect(fetchState.calls).toHaveLength(3)
+    expect(fetchState.calls[1]?.url).toBe('https://api.otalan.com/capacitor/report-update-event')
     expect(readJsonBody(fetchState.calls[1]!)).toMatchObject({
+      appId: 'com.example.app',
+      platform: 'ios',
+      channel: 'production',
+      runtimeVersion: '1.0.0',
+      deviceId: 'device-1',
+      currentBundleId: 'bundle-1',
+      targetBundleId: 'bundle-1',
+      phase: 'confirm',
+      category: 'telemetry_failed',
+      errorType: 'api-error',
+      errorMessage: 'POST https://api.otalan.com/capacitor/confirm failed with status 500: confirm failed',
+    })
+    expect(readJsonBody(fetchState.calls[2]!)).toMatchObject({
       channel: 'production',
       runtimeVersion: '1.0.0',
       transferSource: 'downloaded',

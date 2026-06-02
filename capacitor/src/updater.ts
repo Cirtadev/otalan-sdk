@@ -25,6 +25,7 @@ import {
   resolveRuntimeVersion,
   setNextBundle,
 } from './live-update'
+import { reportCapacitorUpdateEvent } from './update-events'
 import type { LiveUpdateReadyResult } from './live-update'
 
 import type {
@@ -313,6 +314,13 @@ export function createUpdater(config: CapacitorUpdaterConfig) {
         deviceId,
         transferSource: resolveTransferSource(config, pendingTransferSources, bundleId),
       }).catch((error) => {
+        reportCapacitorUpdateEvent(config, {
+          deviceId,
+          currentBundleId: bundleId,
+          targetBundleId: bundleId,
+          phase: 'confirm',
+          error,
+        })
         logger.warn('Otalan install confirmation failed.', serializeErrorForLog(error))
         return false
       })
@@ -354,7 +362,10 @@ export function createUpdater(config: CapacitorUpdaterConfig) {
 
   async function check() {
     const currentBundle = await getCurrentBundle()
-    return checkForUpdate(config, deviceId, currentBundle.bundleId ?? undefined)
+    return checkForUpdateWithReport(config, {
+      deviceId,
+      currentBundleId: currentBundle.bundleId ?? undefined,
+    })
   }
 
   async function sync(): Promise<CapacitorSyncResult> {
@@ -364,7 +375,11 @@ export function createUpdater(config: CapacitorUpdaterConfig) {
 
     const currentBundle = await getCurrentBundle()
     const nextBundle = await getNextBundle()
-    const update = await checkForUpdate(config, deviceId, currentBundle.bundleId ?? undefined)
+    const currentBundleId = currentBundle.bundleId ?? undefined
+    const update = await checkForUpdateWithReport(config, {
+      deviceId,
+      currentBundleId,
+    })
 
     if (!update.updateAvailable) {
       return { updateAvailable: false }
@@ -379,7 +394,16 @@ export function createUpdater(config: CapacitorUpdaterConfig) {
       rememberTransferSource(config, pendingTransferSources, update.bundleId, transferSource)
 
       if (config.reloadOnSync !== false) {
-        await reloadStagedBundle(update.bundleId)
+        await reloadStagedBundle(update.bundleId).catch((error) => {
+          reportCapacitorUpdateEvent(config, {
+            deviceId,
+            currentBundleId,
+            targetBundleId: update.bundleId,
+            phase: 'reload',
+            error,
+          })
+          throw error
+        })
       }
 
       return buildAppliedResult(config, update, transferSource)
@@ -388,13 +412,40 @@ export function createUpdater(config: CapacitorUpdaterConfig) {
     const transferSource = await ensureBundleIsAvailable(update, {
       logger,
       onDownloadProgress: config.onDownloadProgress,
+    }).catch((error) => {
+      reportCapacitorUpdateEvent(config, {
+        deviceId,
+        currentBundleId,
+        targetBundleId: update.bundleId,
+        phase: 'download',
+        error,
+      })
+      throw error
     })
 
-    await setNextBundle(update.bundleId)
+    await setNextBundle(update.bundleId).catch((error) => {
+      reportCapacitorUpdateEvent(config, {
+        deviceId,
+        currentBundleId,
+        targetBundleId: update.bundleId,
+        phase: 'stage',
+        error,
+      })
+      throw error
+    })
     rememberTransferSource(config, pendingTransferSources, update.bundleId, transferSource)
 
     if (config.reloadOnSync !== false) {
-      await reloadStagedBundle(update.bundleId)
+      await reloadStagedBundle(update.bundleId).catch((error) => {
+        reportCapacitorUpdateEvent(config, {
+          deviceId,
+          currentBundleId,
+          targetBundleId: update.bundleId,
+          phase: 'reload',
+          error,
+        })
+        throw error
+      })
     }
 
     return buildAppliedResult(config, update, transferSource)
@@ -448,6 +499,26 @@ async function confirmInstall(
 
   writeStoredInstallConfirmation(confirmationStorageKey)
   return true
+}
+
+async function checkForUpdateWithReport(
+  config: CapacitorUpdaterConfig,
+  input: {
+    deviceId: string
+    currentBundleId?: string
+  },
+) {
+  try {
+    return await checkForUpdate(config, input.deviceId, input.currentBundleId)
+  } catch (error) {
+    reportCapacitorUpdateEvent(config, {
+      deviceId: input.deviceId,
+      currentBundleId: input.currentBundleId,
+      phase: 'check',
+      error,
+    })
+    throw error
+  }
 }
 
 async function checkForUpdate(config: CapacitorUpdaterConfig, deviceId: string, currentBundleId?: string) {

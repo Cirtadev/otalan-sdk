@@ -3,6 +3,14 @@ import { Platform } from 'react-native'
 import * as Updates from 'expo-updates'
 
 import packageJson from '../package.json' with { type: 'json' }
+import { reportExpoUpdateEvent, resolveExpoCheckTargetBundleId } from './update-events'
+
+export type {
+  ExpoUpdateEventCategory,
+  ExpoUpdateEventErrorType,
+  ExpoUpdateEventPhase,
+  ExpoUpdateEventReport,
+} from './update-events'
 
 // -----------------------------------------------------------------------------
 // Types
@@ -689,7 +697,24 @@ export async function initializeUpdater(
       return false
     }
 
-    const update = await checkExpoUpdates(config, deviceId, logger)
+    const reportConfig: ExpoUpdaterConfig = {
+      apiUrl: config.apiUrl,
+      apiKey: config.apiKey,
+      appId: config.appId,
+      channel: config.channel,
+      deviceId,
+      requestTimeoutMs: config.requestTimeoutMs,
+      headers: config.headers,
+      logger,
+    }
+    const update = await checkExpoUpdates(config, deviceId, logger).catch((error) => {
+      reportExpoUpdateEvent(reportConfig, {
+        deviceId,
+        phase: 'check',
+        error,
+      })
+      throw error
+    })
     if (!hasAvailableExpoUpdate(update)) {
       logger.warn('Otalan Expo sync found no available update.', buildExpoUpdatesSyncLogContext({
         update: summarizeExpoUpdateCheckResult(update),
@@ -697,7 +722,16 @@ export async function initializeUpdater(
       return false
     }
 
-    const fetchResult = await Updates.fetchUpdateAsync()
+    const targetBundleId = resolveExpoCheckTargetBundleId(update)
+    const fetchResult = await Updates.fetchUpdateAsync().catch((error) => {
+      reportExpoUpdateEvent(reportConfig, {
+        deviceId,
+        targetBundleId,
+        phase: 'fetch',
+        error,
+      })
+      throw error
+    })
     if (!fetchResult.isNew && !fetchResult.isRollBackToEmbedded) {
       logger.warn('Otalan Expo sync fetch returned no new update.', buildExpoUpdatesSyncLogContext({
         fetchResult: summarizeExpoUpdateFetchResult(fetchResult),
@@ -705,7 +739,15 @@ export async function initializeUpdater(
       return false
     }
 
-    await Updates.reloadAsync()
+    await Updates.reloadAsync().catch((error) => {
+      reportExpoUpdateEvent(reportConfig, {
+        deviceId,
+        targetBundleId,
+        phase: 'reload',
+        error,
+      })
+      throw error
+    })
     return true
   }
 
@@ -745,7 +787,14 @@ export function createUpdater(config: ExpoUpdaterConfig) {
   const confirmingBundlePromises = new Map<string, Promise<ExpoReadyResult>>()
 
   async function check(): Promise<ExpoCheckResult> {
-    const update = await checkExpoUpdates(config, deviceId, logger)
+    const update = await checkExpoUpdates(config, deviceId, logger).catch((error) => {
+      reportExpoUpdateEvent(config, {
+        deviceId,
+        phase: 'check',
+        error,
+      })
+      throw error
+    })
     return buildExpoCheckResult(update)
   }
 
@@ -838,7 +887,17 @@ export function createUpdater(config: ExpoUpdaterConfig) {
         },
         buildHeaders(config),
         resolveRequestTimeoutMs(config),
-      )
+      ).catch((error) => {
+        reportExpoUpdateEvent(config, {
+          deviceId,
+          currentBundleId: current.bundleId,
+          targetBundleId: current.bundleId,
+          runtimeVersion: current.runtimeVersion,
+          phase: 'confirm',
+          error,
+        })
+        throw error
+      })
 
       await writeStoredInstallConfirmation(confirmationKey)
       confirmedBundleKey = confirmationKey

@@ -239,7 +239,11 @@ describe('@otalan/expo startup regressions', () => {
 
   test('confirmCurrentUpdate retries after a failed concurrent confirmation', async () => {
     let confirmAttempts = 0
-    fetchState.handler = async () => {
+    fetchState.handler = async (url) => {
+      if (url.endsWith('/expo/report-update-event')) {
+        return Response.json({ ok: true })
+      }
+
       confirmAttempts += 1
 
       if (confirmAttempts === 1) {
@@ -272,6 +276,23 @@ describe('@otalan/expo startup regressions', () => {
       confirmed: true,
       transferSource: 'downloaded',
     })
-    expect(fetchState.calls).toHaveLength(2)
+    expect(fetchState.calls.map((call) => call.url)).toEqual([
+      'https://api.otalan.com/expo/confirm',
+      'https://api.otalan.com/expo/report-update-event',
+      'https://api.otalan.com/expo/confirm',
+    ])
+    expect(readJsonBody(fetchState.calls[1]!)).toMatchObject({
+      appId: 'com.example.app',
+      platform: 'ios',
+      channel: 'production',
+      runtimeVersion: '1.0.0',
+      deviceId: 'device-1',
+      currentBundleId: 'bundle-1',
+      targetBundleId: 'bundle-1',
+      phase: 'confirm',
+      category: 'telemetry_failed',
+      errorType: 'api-error',
+      errorMessage: 'POST https://api.otalan.com/expo/confirm failed with status 500: confirm failed',
+    })
   })
 })

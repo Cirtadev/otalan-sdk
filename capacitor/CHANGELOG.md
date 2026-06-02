@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.8.0 - 2026-06-02
+
+### Added
+
+- Added best-effort `/capacitor/report-update-event` reporting for failed checks, failed apply phases, and install-confirmation telemetry failures.
+
 ## 1.7.0 - 2026-05-27
 
 ### Added

@@ -36,6 +36,8 @@ export const capacitorState = {
   downloadBundleError: null as Error | null,
   getDownloadedBundlesError: null as Error | null,
   addDownloadProgressListenerError: null as Error | null,
+  setNextBundleError: null as Error | null,
+  reloadError: null as Error | null,
   versionName: '1.0.0',
   readyResult: { currentBundleId: undefined as string | undefined },
   addListenerCalls: 0,
@@ -91,9 +93,17 @@ export const liveUpdateMock = {
   },
   setNextBundle: async (input: { bundleId: string }) => {
     capacitorState.setNextCalls.push(input)
+
+    if (capacitorState.setNextBundleError) {
+      throw capacitorState.setNextBundleError
+    }
   },
   reload: async () => {
     capacitorState.reloadCalls += 1
+
+    if (capacitorState.reloadError) {
+      throw capacitorState.reloadError
+    }
   },
   addListener: async (
     eventName: 'downloadBundleProgress',
@@ -295,6 +305,8 @@ export function resetCapacitorTestHarness() {
   capacitorState.downloadBundleError = null
   capacitorState.getDownloadedBundlesError = null
   capacitorState.addDownloadProgressListenerError = null
+  capacitorState.setNextBundleError = null
+  capacitorState.reloadError = null
   capacitorState.versionName = '1.0.0'
   capacitorState.readyResult = { currentBundleId: undefined }
   capacitorState.addListenerCalls = 0
