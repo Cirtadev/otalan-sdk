@@ -25,6 +25,13 @@ import {
   resolveRuntimeVersion,
   setNextBundle,
 } from './live-update'
+import {
+  clearRollbackProtectionAfterReady,
+  isRollbackProtectionBlockedBundle,
+  prepareRollbackProtectionBeforeReady,
+  rememberPendingRollbackProtectionBundle,
+  waitForRollbackProtectionValidation,
+} from './capacitor-rollback-protection'
 import { reportCapacitorUpdateEvent } from './update-events'
 import type { LiveUpdateReadyResult } from './live-update'
 
@@ -257,6 +264,7 @@ export async function initializeUpdater(
       reloadOnSync: config.reloadOnSync,
       requestTimeoutMs: config.requestTimeoutMs,
       allowInsecureBundleUrls: config.allowInsecureBundleUrls,
+      rollbackProtection: config.rollbackProtection,
       headers: config.headers,
       onDownloadProgress: config.onDownloadProgress,
       logger,
@@ -280,6 +288,7 @@ export function createUpdater(config: CapacitorUpdaterConfig) {
   const logger = config.logger ?? console
   const deviceId = requireDeviceId(config)
   let confirmedBundleId: string | null = null
+  let readyBundlePromise: Promise<LiveUpdateReadyResult> | null = null
   const confirmingBundlePromises = new Map<string, Promise<void>>()
   const pendingTransferSources = new Map<string, CapacitorTransferSource>()
 
@@ -337,10 +346,44 @@ export function createUpdater(config: CapacitorUpdaterConfig) {
     await confirmationPromise
   }
 
+  async function resolveReadyBundle() {
+    const rollbackProtection = await prepareRollbackProtectionBeforeReady(config, logger)
+    if (rollbackProtection.action === 'rolled-back') {
+      return rollbackProtection.result
+    }
+
+    const result = await readyLiveUpdate()
+    if (result.rollback) {
+      clearRollbackProtectionAfterReady(config, result)
+      return result
+    }
+
+    await waitForRollbackProtectionValidation(rollbackProtection.validationDelayMs)
+    clearRollbackProtectionAfterReady(config, result)
+
+    return result
+  }
+
+  function getReadyBundle() {
+    if (readyBundlePromise) {
+      return readyBundlePromise
+    }
+
+    readyBundlePromise = resolveReadyBundle().finally(() => {
+      readyBundlePromise = null
+    })
+
+    return readyBundlePromise
+  }
+
   async function readyInternal(options: {
     waitForConfirmation: boolean
   }) {
-    const result = await readyLiveUpdate()
+    const result = await getReadyBundle()
+
+    if (result.rollback) {
+      return result
+    }
 
     if (options.waitForConfirmation) {
       await confirmReadyBundle(result)
@@ -362,16 +405,31 @@ export function createUpdater(config: CapacitorUpdaterConfig) {
 
   async function check() {
     const currentBundle = await getCurrentBundle()
-    return checkForUpdateWithReport(config, {
+    const update = await checkForUpdateWithReport(config, {
       deviceId,
       currentBundleId: currentBundle.bundleId ?? undefined,
     })
+    if (update.updateAvailable && isRollbackProtectionBlockedBundle(config, update.bundleId)) {
+      logRollbackProtectionBlockedBundle(logger, update.bundleId)
+      return {
+        updateAvailable: false as const,
+        appId: update.appId,
+        platform: update.platform,
+        runtimeVersion: update.runtimeVersion,
+      }
+    }
+
+    return update
   }
 
   async function sync(): Promise<CapacitorSyncResult> {
-    await readyInternal({ waitForConfirmation: false }).catch((error) => {
+    const readyResult = await readyInternal({ waitForConfirmation: false }).catch((error) => {
       logger.warn('Otalan ready() failed.', serializeErrorForLog(error))
+      return null
     })
+    if (readyResult?.rollback) {
+      return { updateAvailable: false }
+    }
 
     const currentBundle = await getCurrentBundle()
     const nextBundle = await getNextBundle()
@@ -389,9 +447,18 @@ export function createUpdater(config: CapacitorUpdaterConfig) {
       return { updateAvailable: false }
     }
 
+    if (isRollbackProtectionBlockedBundle(config, update.bundleId)) {
+      logRollbackProtectionBlockedBundle(logger, update.bundleId)
+      return { updateAvailable: false }
+    }
+
     if (update.bundleId === nextBundle.bundleId) {
       const transferSource = await resolveStagedTransferSource(update.bundleId)
       rememberTransferSource(config, pendingTransferSources, update.bundleId, transferSource)
+      rememberPendingRollbackProtectionBundle(config, {
+        targetBundleId: update.bundleId,
+        previousBundleId: currentBundleId,
+      })
 
       if (config.reloadOnSync !== false) {
         await reloadStagedBundle(update.bundleId).catch((error) => {
@@ -434,6 +501,10 @@ export function createUpdater(config: CapacitorUpdaterConfig) {
       throw error
     })
     rememberTransferSource(config, pendingTransferSources, update.bundleId, transferSource)
+    rememberPendingRollbackProtectionBundle(config, {
+      targetBundleId: update.bundleId,
+      previousBundleId: currentBundleId,
+    })
 
     if (config.reloadOnSync !== false) {
       await reloadStagedBundle(update.bundleId).catch((error) => {
@@ -457,6 +528,13 @@ export function createUpdater(config: CapacitorUpdaterConfig) {
     check,
     sync,
   }
+}
+
+function logRollbackProtectionBlockedBundle(logger: Pick<Console, 'warn'>, bundleId: string) {
+  logger.warn('[ota] update skipped because bundle failed rollback validation', {
+    ...SDK_LOG_CONTEXT,
+    bundleId,
+  })
 }
 
 async function confirmInstall(

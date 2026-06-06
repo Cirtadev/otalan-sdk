@@ -13,6 +13,7 @@ This package is the full client-side orchestration layer for Otalan on Capacitor
 - reports native bundle download progress when requested
 - sets the next bundle
 - reloads the app when needed
+- protects newly launched OTA bundles with SDK-managed rollback validation
 - confirms successful installs with advisory bundle transfer source metadata
 - provides an initialized helper through `initializeUpdater()`
 
@@ -76,6 +77,7 @@ VITE_OTALAN_APP_KEY=otalan_ota_xxx
 VITE_OTALAN_APP_ID=com.example.app
 VITE_OTALAN_CHANNEL=production
 VITE_OTALAN_RUNTIME_VERSION=1.0.0
+VITE_OTALAN_ROLLBACK_VALIDATION_DELAY_MS=10000
 ```
 
 Create the updater when your app is ready to manage OTA updates, then reuse it for later checks or syncs:
@@ -93,6 +95,9 @@ export async function syncOtalanUpdates() {
       appId: import.meta.env.VITE_OTALAN_APP_ID,
       channel: import.meta.env.VITE_OTALAN_CHANNEL,
       runtimeVersion: import.meta.env.VITE_OTALAN_RUNTIME_VERSION || undefined,
+      rollbackProtection: {
+        validationDelayMs: Number(import.meta.env.VITE_OTALAN_ROLLBACK_VALIDATION_DELAY_MS || 10000),
+      },
       onResume: true,
       onDownloadProgress: (event) => {
         console.log(
@@ -156,6 +161,9 @@ const updater = createUpdater({
   appId: 'com.example.app',
   channel: 'production',
   deviceId: await loadOrCreateStableDeviceId(),
+  rollbackProtection: {
+    validationDelayMs: 10000,
+  },
 })
 
 await updater.ready()
@@ -215,6 +223,7 @@ Config:
 - `reloadOnSync`: defaults to `true`
 - `requestTimeoutMs`: request timeout for Otalan API calls, defaults to `15000`
 - `allowInsecureBundleUrls`: defaults to `false`; set only for development bundle URLs served over plain HTTP
+- `rollbackProtection`: defaults to `true`; set `false` to disable SDK-managed rollback validation, or pass `{ validationDelayMs }` to tune the launch validation window
 - `headers`: optional extra request headers
 - `onDownloadProgress`: optional callback for native bundle download progress events
 - `logger`: optional warning logger
@@ -302,6 +311,8 @@ Runs the full Otalan update flow:
 6. stages the next bundle
 7. reloads unless `reloadOnSync` is `false`
 
+Before reloading into a newly staged bundle, the SDK records the target bundle and previous bundle in local storage. On the next launch of that target bundle, `ready()` calls native `LiveUpdate.ready()` promptly, then waits for the rollback protection validation window before confirming the bundle. If the previous launch of the same pending target did not survive long enough to validate, the SDK stages the previous bundle when possible, otherwise resets to the default bundle, then reloads.
+
 When an update is applied, `CapacitorSyncResult` includes experimental `transferSource` metadata:
 
 - `downloaded`: the SDK called `LiveUpdate.downloadBundle()` for this bundle before staging it
@@ -350,6 +361,8 @@ The SDK sends the OTA App Key with Otalan requests. Update checks include `appId
 Update failure and telemetry events are reported best-effort to `/capacitor/report-update-event` with the same OTA App Key auth. Event payloads include `eventId`, `appId`, `platform`, `channel`, optional `runtimeVersion`, optional `deviceId`, optional `currentBundleId`, optional `targetBundleId`, `phase`, `category`, `errorType`, `errorMessage`, `sdkName`, and `sdkVersion`. Capacitor reports `phase: "check"` as `category: "check_failed"`, `download`, `stage`, and `reload` as `apply_failed`, and `confirm` as `telemetry_failed`. Confirmation failures are not failed updates; they only mean the SDK could not send telemetry for an already launched bundle. Apply failures include `targetBundleId` only when the SDK has a selected target bundle; unmatched apply failures stay diagnostic in Otalan analytics.
 
 Otalan API requests time out after `requestTimeoutMs`, defaulting to 15 seconds. Bundle downloads are still performed by `@capawesome/capacitor-live-update`, but the SDK only passes HTTPS `downloadUrl` values to the plugin by default. Download progress is forwarded from the plugin's `downloadBundleProgress` event when `onDownloadProgress` is configured. Set `allowInsecureBundleUrls: true` only for local development environments that intentionally serve bundles over plain HTTP.
+
+SDK-managed rollback protection is enabled by default for Capacitor. It calls native `LiveUpdate.ready()` promptly, then delays Otalan install confirmation for newly launched SDK-managed bundles by `rollbackProtection.validationDelayMs`, defaulting to `10000`. This protects bundles that reach SDK initialization and then fail before validation completes. Locally rolled-back target bundles are skipped on later checks and syncs for the same app, channel, and device. Native failures before the app starts the SDK still require native runtime rollback support such as Capawesome Live Update `readyTimeout`.
 
 `transferSource` is either `downloaded` or `cached`. Treat it as advisory client-reported metadata only.
 

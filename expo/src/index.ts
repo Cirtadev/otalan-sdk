@@ -2,8 +2,41 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { Platform } from 'react-native'
 import * as Updates from 'expo-updates'
 
-import packageJson from '../package.json' with { type: 'json' }
-import { reportExpoUpdateEvent, resolveExpoCheckTargetBundleId } from './update-events'
+import {
+  applyExpoRollbackRecoveryUpdate,
+  buildExpoCheckResult,
+  buildExpoUpdatesSyncLogContext,
+  checkForUpdateWithRollbackProtection,
+  hasAvailableExpoUpdate,
+  OTALAN_EXPO_SDK_NAME,
+  OTALAN_EXPO_SDK_VERSION,
+  requestExpoRollbackToEmbedded,
+  summarizeExpoUpdateCheckResult,
+  summarizeExpoUpdateFetchResult,
+} from './expo-updates-adapter'
+import {
+  clearExpoRollbackProtectionAfterReady,
+  clearExpoRollbackRequest,
+  prepareExpoRollbackProtectionBeforeReady,
+  rememberPendingExpoRollbackProtectionBundle,
+  waitForExpoRollbackProtectionValidation,
+} from './expo-rollback-protection'
+import { reportExpoUpdateEvent } from './update-events'
+import type {
+  ExpoRollbackProtectionConfig,
+} from './expo-rollback-protection'
+
+export {
+  OTALAN_EXPO_BLOCKED_BUNDLE_IDS_EXTRA_PARAM_KEY,
+  OTALAN_EXPO_DEVICE_ID_EXTRA_PARAM_KEY,
+  OTALAN_EXPO_ROLLBACK_TARGET_BUNDLE_ID_EXTRA_PARAM_KEY,
+  OTALAN_EXPO_SDK_NAME,
+  OTALAN_EXPO_SDK_VERSION,
+} from './expo-updates-adapter'
+
+export type {
+  ExpoRollbackProtectionConfig,
+} from './expo-rollback-protection'
 
 export type {
   ExpoUpdateEventCategory,
@@ -36,6 +69,7 @@ export type ExpoUpdaterConfig = {
   channel: string
   deviceId: string
   requestTimeoutMs?: number
+  rollbackProtection?: boolean | ExpoRollbackProtectionConfig
   headers?: HeadersInit
   logger?: Pick<Console, 'warn'>
 }
@@ -82,10 +116,6 @@ const DEFAULT_TRANSFER_SOURCE: ExpoTransferSource = 'downloaded'
 const CONFIRMED_INSTALL_STORAGE_KEY_PREFIX = 'otalan:expo:confirmed-install:'
 const MAX_SERIALIZED_CAUSE_DEPTH = 5
 
-export const OTALAN_EXPO_SDK_NAME = packageJson.name
-export const OTALAN_EXPO_SDK_VERSION = packageJson.version
-export const OTALAN_EXPO_DEVICE_ID_EXTRA_PARAM_KEY = 'otalan-device-id'
-
 const SDK_LOG_CONTEXT = {
   sdkName: OTALAN_EXPO_SDK_NAME,
   sdkVersion: OTALAN_EXPO_SDK_VERSION,
@@ -111,7 +141,7 @@ function mergeHeaders(...sources: Array<HeadersInit | undefined>) {
   return headers
 }
 
-function buildHeaders(config: ExpoUpdaterConfig, extra?: HeadersInit) {
+function buildHeaders(config: Pick<ExpoUpdaterConfig, 'apiKey' | 'headers'>, extra?: HeadersInit) {
   const headers = mergeHeaders(config.headers, extra)
 
   headers.set('Content-Type', 'application/json')
@@ -243,43 +273,6 @@ async function persistDeviceId(
   }
 }
 
-async function setExpoUpdateDeviceIdExtraParam(
-  deviceId: string,
-  logger: Pick<Console, 'warn'>,
-) {
-  try {
-    await Updates.setExtraParamAsync(OTALAN_EXPO_DEVICE_ID_EXTRA_PARAM_KEY, deviceId)
-  } catch (error) {
-    logger.warn('Otalan Expo update device ID extra param failed.', serializeErrorForLog(error))
-  }
-}
-
-function setExpoUpdateRequestHeaders(
-  config: Pick<ExpoUpdaterConfig, 'apiKey'>,
-  logger: Pick<Console, 'warn'>,
-) {
-  try {
-    Updates.setUpdateRequestHeadersOverride({ 'x-api-key': config.apiKey })
-  } catch (error) {
-    logger.warn('Otalan Expo update request header override failed.', serializeErrorForLog(error))
-  }
-}
-
-function buildExpoUpdatesSyncLogContext(extra?: Record<string, unknown>) {
-  return {
-    ...SDK_LOG_CONTEXT,
-    platform: Platform.OS,
-    expoUpdates: {
-      isEnabled: Updates.isEnabled,
-      isEmbeddedLaunch: Updates.isEmbeddedLaunch,
-      isEmergencyLaunch: Updates.isEmergencyLaunch,
-      runtimeVersion: Updates.runtimeVersion ?? null,
-      updateId: Updates.updateId ?? null,
-    },
-    ...extra,
-  }
-}
-
 function resolveExpoSyncUnavailableReason(
   config: InitializeExpoUpdaterConfig,
   deviceId: string | null,
@@ -318,55 +311,6 @@ function resolveExpoSyncUnavailableReason(
   }
 
   return 'unavailable'
-}
-
-function summarizeExpoUpdateCheckResult(result: {
-  isAvailable?: boolean
-  isRollBackToEmbedded?: boolean
-  reason?: unknown
-}) {
-  return {
-    isAvailable: result.isAvailable,
-    isRollBackToEmbedded: result.isRollBackToEmbedded,
-    ...(typeof result.reason === 'string' ? { reason: result.reason } : {}),
-  }
-}
-
-function hasAvailableExpoUpdate(result: {
-  isAvailable?: boolean
-  isRollBackToEmbedded?: boolean
-}) {
-  return Boolean(result.isAvailable || result.isRollBackToEmbedded)
-}
-
-function buildExpoCheckResult(result: {
-  isAvailable?: boolean
-  isRollBackToEmbedded?: boolean
-}): ExpoCheckResult {
-  return {
-    updateAvailable: hasAvailableExpoUpdate(result),
-  }
-}
-
-async function checkExpoUpdates(
-  config: Pick<ExpoUpdaterConfig, 'apiKey'>,
-  deviceId: string,
-  logger: Pick<Console, 'warn'>,
-) {
-  await setExpoUpdateDeviceIdExtraParam(deviceId, logger)
-  setExpoUpdateRequestHeaders(config, logger)
-
-  return Updates.checkForUpdateAsync()
-}
-
-function summarizeExpoUpdateFetchResult(result: {
-  isNew?: boolean
-  isRollBackToEmbedded?: boolean
-}) {
-  return {
-    isNew: result.isNew,
-    isRollBackToEmbedded: result.isRollBackToEmbedded,
-  }
 }
 
 function normalizeDeviceId(deviceId: unknown) {
@@ -615,6 +559,7 @@ export async function initializeUpdater(
         channel: config.channel,
         deviceId,
         requestTimeoutMs: config.requestTimeoutMs,
+        rollbackProtection: config.rollbackProtection,
         headers: config.headers,
         logger,
       })
@@ -704,10 +649,11 @@ export async function initializeUpdater(
       channel: config.channel,
       deviceId,
       requestTimeoutMs: config.requestTimeoutMs,
+      rollbackProtection: config.rollbackProtection,
       headers: config.headers,
       logger,
     }
-    const update = await checkExpoUpdates(config, deviceId, logger).catch((error) => {
+    const checked = await checkForUpdateWithRollbackProtection(reportConfig, deviceId, logger).catch((error) => {
       reportExpoUpdateEvent(reportConfig, {
         deviceId,
         phase: 'check',
@@ -715,6 +661,21 @@ export async function initializeUpdater(
       })
       throw error
     })
+    const { update, targetBundleId } = checked
+    if (checked.blocked) {
+      return false
+    }
+
+    if (checked.rollbackTargetBundleId) {
+      return applyExpoRollbackRecoveryUpdate(
+        reportConfig,
+        deviceId,
+        checked,
+        checked.rollbackTargetBundleId,
+        logger,
+      )
+    }
+
     if (!hasAvailableExpoUpdate(update)) {
       logger.warn('Otalan Expo sync found no available update.', buildExpoUpdatesSyncLogContext({
         update: summarizeExpoUpdateCheckResult(update),
@@ -722,7 +683,6 @@ export async function initializeUpdater(
       return false
     }
 
-    const targetBundleId = resolveExpoCheckTargetBundleId(update)
     const fetchResult = await Updates.fetchUpdateAsync().catch((error) => {
       reportExpoUpdateEvent(reportConfig, {
         deviceId,
@@ -737,6 +697,16 @@ export async function initializeUpdater(
         fetchResult: summarizeExpoUpdateFetchResult(fetchResult),
       }))
       return false
+    }
+
+    if (targetBundleId && fetchResult.isNew && !fetchResult.isRollBackToEmbedded) {
+      await rememberPendingExpoRollbackProtectionBundle(reportConfig, {
+        targetBundleId,
+      })
+    }
+
+    if (fetchResult.isRollBackToEmbedded) {
+      await clearExpoRollbackRequest(reportConfig)
     }
 
     await Updates.reloadAsync().catch((error) => {
@@ -784,10 +754,11 @@ export function createUpdater(config: ExpoUpdaterConfig) {
   const logger = config.logger ?? console
   const deviceId = requireDeviceId(config)
   let confirmedBundleKey: string | null = null
+  let readyPromise: Promise<ExpoReadyResult> | null = null
   const confirmingBundlePromises = new Map<string, Promise<ExpoReadyResult>>()
 
   async function check(): Promise<ExpoCheckResult> {
-    const update = await checkExpoUpdates(config, deviceId, logger).catch((error) => {
+    const checked = await checkForUpdateWithRollbackProtection(config, deviceId, logger).catch((error) => {
       reportExpoUpdateEvent(config, {
         deviceId,
         phase: 'check',
@@ -795,7 +766,9 @@ export function createUpdater(config: ExpoUpdaterConfig) {
       })
       throw error
     })
-    return buildExpoCheckResult(update)
+    return checked.blocked
+      ? { updateAvailable: false }
+      : buildExpoCheckResult(checked.update)
   }
 
   async function getCurrentUpdate(): Promise<ExpoReadyResult> {
@@ -828,6 +801,12 @@ export function createUpdater(config: ExpoUpdaterConfig) {
       return current
     }
 
+    const rollbackProtection = await prepareExpoRollbackProtectionBeforeReady(config, current)
+    if (rollbackProtection.action === 'request-rollback') {
+      await requestExpoRollbackToEmbedded(config, deviceId, rollbackProtection.targetBundleId, logger)
+      return current
+    }
+
     if (current.isEmergencyLaunch) {
       return current
     }
@@ -839,6 +818,9 @@ export function createUpdater(config: ExpoUpdaterConfig) {
     if (!current.bundleId || !current.runtimeVersion) {
       return current
     }
+
+    await waitForExpoRollbackProtectionValidation(rollbackProtection.validationDelayMs)
+    await clearExpoRollbackProtectionAfterReady(config, current)
 
     const platform = resolvePlatform()
     const confirmationKey = buildConfirmationKey({
@@ -916,10 +898,18 @@ export function createUpdater(config: ExpoUpdaterConfig) {
   }
 
   async function ready(): Promise<ExpoReadyResult> {
-    return confirmCurrentUpdate().catch((error) => {
+    if (readyPromise) {
+      return readyPromise
+    }
+
+    readyPromise = confirmCurrentUpdate().catch((error) => {
       logger.warn('Otalan install confirmation failed.', serializeErrorForLog(error))
       return getCurrentUpdate()
+    }).finally(() => {
+      readyPromise = null
     })
+
+    return readyPromise
   }
 
   return {

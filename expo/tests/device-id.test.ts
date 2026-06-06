@@ -744,7 +744,9 @@ describe('@otalan/expo device id resolver', () => {
     asyncStorageState.storedItems.set('otalan-device-id', 'otalan-expo-old-android')
 
     const {
+      OTALAN_EXPO_BLOCKED_BUNDLE_IDS_EXTRA_PARAM_KEY,
       OTALAN_EXPO_DEVICE_ID_EXTRA_PARAM_KEY,
+      OTALAN_EXPO_ROLLBACK_TARGET_BUNDLE_ID_EXTRA_PARAM_KEY,
       initializeUpdater,
     } = await loadSdk()
 
@@ -760,6 +762,8 @@ describe('@otalan/expo device id resolver', () => {
     expect(await updater.getDeviceId()).toBe('android-device-1')
     expect(expoState.extraParamCalls).toEqual([
       { key: OTALAN_EXPO_DEVICE_ID_EXTRA_PARAM_KEY, value: 'android-device-1' },
+      { key: OTALAN_EXPO_BLOCKED_BUNDLE_IDS_EXTRA_PARAM_KEY, value: null },
+      { key: OTALAN_EXPO_ROLLBACK_TARGET_BUNDLE_ID_EXTRA_PARAM_KEY, value: null },
     ])
     expect(expoState.requestHeaderOverrideCalls).toEqual([
       { 'x-api-key': 'otalan_ota_xxx' },
@@ -776,7 +780,9 @@ describe('@otalan/expo device id resolver', () => {
     asyncStorageState.storedItems.set('otalan-device-id', 'stale-storage-device')
 
     const {
+      OTALAN_EXPO_BLOCKED_BUNDLE_IDS_EXTRA_PARAM_KEY,
       OTALAN_EXPO_DEVICE_ID_EXTRA_PARAM_KEY,
+      OTALAN_EXPO_ROLLBACK_TARGET_BUNDLE_ID_EXTRA_PARAM_KEY,
       initializeUpdater,
     } = await loadSdk()
 
@@ -795,6 +801,8 @@ describe('@otalan/expo device id resolver', () => {
     expect(asyncStorageState.getItemCalls).not.toContain('otalan-device-id')
     expect(expoState.extraParamCalls).toEqual([
       { key: OTALAN_EXPO_DEVICE_ID_EXTRA_PARAM_KEY, value: 'explicit-device' },
+      { key: OTALAN_EXPO_BLOCKED_BUNDLE_IDS_EXTRA_PARAM_KEY, value: null },
+      { key: OTALAN_EXPO_ROLLBACK_TARGET_BUNDLE_ID_EXTRA_PARAM_KEY, value: null },
     ])
   })
 
@@ -803,7 +811,9 @@ describe('@otalan/expo device id resolver', () => {
     asyncStorageState.storedItems.set('otalan-device-id', 'otalan-expo-old-ios')
 
     const {
+      OTALAN_EXPO_BLOCKED_BUNDLE_IDS_EXTRA_PARAM_KEY,
       OTALAN_EXPO_DEVICE_ID_EXTRA_PARAM_KEY,
+      OTALAN_EXPO_ROLLBACK_TARGET_BUNDLE_ID_EXTRA_PARAM_KEY,
       initializeUpdater,
     } = await loadSdk()
 
@@ -821,6 +831,8 @@ describe('@otalan/expo device id resolver', () => {
     expect(asyncStorageState.setItemCalls.filter(call => call.key === 'otalan-device-id')).toHaveLength(0)
     expect(expoState.extraParamCalls).toEqual([
       { key: OTALAN_EXPO_DEVICE_ID_EXTRA_PARAM_KEY, value: 'otalan-expo-old-ios' },
+      { key: OTALAN_EXPO_BLOCKED_BUNDLE_IDS_EXTRA_PARAM_KEY, value: null },
+      { key: OTALAN_EXPO_ROLLBACK_TARGET_BUNDLE_ID_EXTRA_PARAM_KEY, value: null },
     ])
   })
 })

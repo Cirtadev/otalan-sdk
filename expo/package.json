@@ -1,7 +1,7 @@
 {
   "name": "@otalan/expo",
   "type": "module",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "license": "Apache-2.0",
   "description": "Otalan OTA confirmation, check, and manual sync helper for Expo apps using expo-updates.",
   "repository": {

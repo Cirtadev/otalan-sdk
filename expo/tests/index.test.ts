@@ -673,7 +673,9 @@ describe('@otalan/expo', () => {
     expoState.isEmbeddedLaunch = true
 
     const {
+      OTALAN_EXPO_BLOCKED_BUNDLE_IDS_EXTRA_PARAM_KEY,
       OTALAN_EXPO_DEVICE_ID_EXTRA_PARAM_KEY,
+      OTALAN_EXPO_ROLLBACK_TARGET_BUNDLE_ID_EXTRA_PARAM_KEY,
       initializeUpdater,
     } = await loadSdk()
 
@@ -689,6 +691,8 @@ describe('@otalan/expo', () => {
 
     expect(expoState.extraParamCalls).toEqual([
       { key: OTALAN_EXPO_DEVICE_ID_EXTRA_PARAM_KEY, value: deviceId },
+      { key: OTALAN_EXPO_BLOCKED_BUNDLE_IDS_EXTRA_PARAM_KEY, value: null },
+      { key: OTALAN_EXPO_ROLLBACK_TARGET_BUNDLE_ID_EXTRA_PARAM_KEY, value: null },
     ])
     expect(expoState.requestHeaderOverrideCalls).toEqual([
       { 'x-api-key': 'otalan_ota_xxx' },
@@ -801,6 +805,15 @@ describe('@otalan/expo', () => {
     expect(logger.warnCalls).toEqual([
       [
         'Otalan Expo update device ID extra param failed.',
+        {
+          sdkName: OTALAN_EXPO_SDK_NAME,
+          sdkVersion: OTALAN_EXPO_SDK_VERSION,
+          name: 'Error',
+          message: 'extra params unavailable',
+        },
+      ],
+      [
+        'Otalan Expo rollback protection extra param failed.',
         {
           sdkName: OTALAN_EXPO_SDK_NAME,
           sdkVersion: OTALAN_EXPO_SDK_VERSION,

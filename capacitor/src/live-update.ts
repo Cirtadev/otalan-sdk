@@ -64,6 +64,14 @@ export async function reloadStagedBundle(bundleIdForLog: string) {
   })
 }
 
+export async function resetToDefaultBundle(bundleIdForLog: string) {
+  await LiveUpdate.reset().catch((error) => {
+    throw buildLiveUpdateFailureError('LiveUpdate.reset', error, {
+      bundleId: bundleIdForLog,
+    })
+  })
+}
+
 export async function resolveRuntimeVersion(config: CapacitorUpdaterConfig) {
   if (config.runtimeVersion) {
     return config.runtimeVersion

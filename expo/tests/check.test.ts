@@ -144,7 +144,9 @@ beforeEach(() => {
 describe('@otalan/expo check', () => {
   test('initialized check sets Otalan update context without fetching or reloading', async () => {
     const {
+      OTALAN_EXPO_BLOCKED_BUNDLE_IDS_EXTRA_PARAM_KEY,
       OTALAN_EXPO_DEVICE_ID_EXTRA_PARAM_KEY,
+      OTALAN_EXPO_ROLLBACK_TARGET_BUNDLE_ID_EXTRA_PARAM_KEY,
       initializeUpdater,
     } = await loadSdk()
 
@@ -160,6 +162,8 @@ describe('@otalan/expo check', () => {
 
     expect(expoState.extraParamCalls).toEqual([
       { key: OTALAN_EXPO_DEVICE_ID_EXTRA_PARAM_KEY, value: 'device-1' },
+      { key: OTALAN_EXPO_BLOCKED_BUNDLE_IDS_EXTRA_PARAM_KEY, value: null },
+      { key: OTALAN_EXPO_ROLLBACK_TARGET_BUNDLE_ID_EXTRA_PARAM_KEY, value: null },
     ])
     expect(expoState.requestHeaderOverrideCalls).toEqual([
       { 'x-api-key': 'otalan_ota_xxx' },

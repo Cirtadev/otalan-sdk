@@ -132,6 +132,7 @@ describe('@otalan/capacitor sync transfer source behavior', () => {
       appId: 'com.example.app',
       channel: 'production',
       deviceId: 'device-1',
+      rollbackProtection: { validationDelayMs: 0 },
     })
 
     await reloadedUpdater.ready()
@@ -195,6 +196,7 @@ describe('@otalan/capacitor sync transfer source behavior', () => {
       appId: 'com.example.app',
       channel: 'production',
       deviceId: 'device-1',
+      rollbackProtection: { validationDelayMs: 0 },
     })
 
     await reloadedUpdater.ready()

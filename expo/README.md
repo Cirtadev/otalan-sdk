@@ -12,11 +12,13 @@ This package is intentionally small. It does not replace `expo-updates`. Update 
 - exposes `initialized.sync()` for manual check, fetch, and reload
 - confirms eligible launched OTA updates with advisory transfer source metadata
 - sends the OTA App Key through the `x-api-key` header on update checks and confirm requests
+- applies SDK-managed rollback validation for updates applied through `initialized.sync()`
 
 ## What This Package Does Not Do
 
 - it does not decide rollout eligibility
 - it does not replace `expo-updates`
+- it does not directly stage an older Expo update; Expo rollback depends on `expo-updates` receiving a rollback-to-embedded response from the configured manifest endpoint
 
 ## What You Need
 
@@ -75,6 +77,7 @@ EXPO_PUBLIC_OTALAN_API_URL=https://api.otalan.com
 EXPO_PUBLIC_OTALAN_APP_KEY=otalan_ota_xxx
 EXPO_PUBLIC_OTALAN_APP_ID=com.example.app
 EXPO_PUBLIC_OTALAN_CHANNEL=production
+EXPO_PUBLIC_OTALAN_ROLLBACK_VALIDATION_DELAY_MS=10000
 ```
 
 Example `app.config.js`:
@@ -92,6 +95,8 @@ export default {
       url: `${apiUrl}/expo/updates?appId=${appId}&channel=${channel}`,
       requestHeaders: {
         'x-api-key': process.env.EXPO_PUBLIC_OTALAN_APP_KEY ?? '',
+        'x-otalan-blocked-bundle-ids': '',
+        'x-otalan-rollback-target-bundle-id': '',
       },
       checkAutomatically: 'NEVER',
       fallbackToCacheTimeout: 0,
@@ -114,7 +119,7 @@ OTA Publish Key values use the `otalan_ci_...` token format and are for release 
 
 Partial rollouts for Expo require a stable device ID on Otalan update checks. `@otalan/expo` creates and persists that ID, then writes it to Expo update extra params as `otalan-device-id` before checking for updates. App code does not need to know or set an Otalan device header.
 
-`initialized.check()` and `initialized.sync()` set the OTA App Key request header before checking for updates. Expo requires runtime-overridden header keys to already be declared in `updates.requestHeaders` in native config.
+`initialized.check()` and `initialized.sync()` set the OTA App Key request header before checking for updates. Rollback protection also sets `x-otalan-blocked-bundle-ids` and `x-otalan-rollback-target-bundle-id` when needed. Expo requires runtime-overridden header keys to already be declared in `updates.requestHeaders` in native config.
 
 ## Quick Start
 
@@ -132,6 +137,9 @@ export async function syncOtalanUpdates() {
       apiKey: process.env.EXPO_PUBLIC_OTALAN_APP_KEY!,
       appId: process.env.EXPO_PUBLIC_OTALAN_APP_ID!,
       channel: process.env.EXPO_PUBLIC_OTALAN_CHANNEL!,
+      rollbackProtection: {
+        validationDelayMs: Number(process.env.EXPO_PUBLIC_OTALAN_ROLLBACK_VALIDATION_DELAY_MS || 10000),
+      },
     })
   }
 
@@ -202,6 +210,43 @@ The helper delegates fetching and staging to `expo-updates`, so it cannot reliab
 
 Unlike `@otalan/capacitor`, this package does not report `cached` confirmations. The Capacitor SDK controls the bundle download/staging flow and can ask the live-update plugin whether a bundle already exists on the device. The Expo helper only observes the currently launched update through `expo-updates`, so it cannot distinguish a cached launch from a freshly downloaded launch with enough confidence.
 
+## Rollback Protection
+
+`rollbackProtection` is enabled by default. The default validation window is `10000` milliseconds.
+
+When `initialized.sync()` fetches a new Expo update, the SDK records the target Otalan bundle ID before calling `Updates.reloadAsync()`. On the target launch, `ready()` waits for the validation window before confirming the install. If the same pending target launches again after the validation window was not completed, the SDK blocks that target locally, sends rollback context to the next Expo update check, fetches the rollback response, and reloads when `expo-updates` returns a rollback-to-embedded result.
+
+Expo does not expose a JavaScript API for the SDK to directly stage a previous update bundle. The actual rollback action for Expo is therefore a request to the Otalan manifest endpoint through `expo-updates`; the endpoint must respond with Expo's rollback-to-embedded manifest behavior for the runtime to apply it.
+
+Disable or tune the validation window when needed:
+
+```ts
+await initializeUpdater({
+  apiUrl: 'https://api.otalan.com',
+  apiKey: 'otalan_ota_xxx',
+  appId: 'com.example.app',
+  channel: 'production',
+  rollbackProtection: {
+    validationDelayMs: 10000,
+  },
+})
+```
+
+You can disable SDK rollback protection with `rollbackProtection: false`. This only disables SDK-side pending markers, local blocklisting, and rollback-request context; native Expo emergency launch and rollback-to-embedded behavior still belongs to `expo-updates`.
+
+### Otalan API Rollback Contract
+
+Expo rollback support requires `/expo/updates` to understand the rollback context sent by the SDK. The endpoint must avoid selecting locally blocked targets and must return Expo rollback-to-embedded when the rollback target is still active or no safe active bundle exists. If operators have already activated a safe non-blocked bundle, the endpoint can serve that bundle normally.
+
+The SDK sends rollback context through Expo extra params and, when present, declared request headers:
+
+- `otalan-blocked-bundle-ids` / `x-otalan-blocked-bundle-ids`: JSON array of target bundle IDs that failed local validation
+- `otalan-rollback-target-bundle-id` / `x-otalan-rollback-target-bundle-id`: failed target bundle ID that should roll back to embedded
+
+During a rollback request, the SDK rejects locally blocked targets, reloads when `expo-updates` reports `isRollBackToEmbedded`, and can also reload a safe non-blocked active update selected by the endpoint. If the endpoint returns no update, or a fetch result that is neither rollback-to-embedded nor a new safe update, the SDK leaves the rollback request pending for a later check.
+
+Expose the selected Otalan bundle ID in Expo manifests through `metadata.bundleId` or `extra.otalan.bundleId` so the SDK can locally block failed targets on later checks.
+
 ## Initialized Helper Behavior
 
 When `enabled` is omitted, `initializeUpdater()`:
@@ -236,6 +281,7 @@ Config:
 - `channel`: release channel
 - `deviceId`: required stable device ID
 - `requestTimeoutMs`: request timeout for Otalan API calls, defaults to `15000`
+- `rollbackProtection`: optional rollback validation config. Omit for enabled with `validationDelayMs: 10000`, pass `false` to disable, or pass `{ enabled?: boolean, validationDelayMs?: number }` to tune it.
 - `headers`: optional extra request headers
 - `logger`: optional warning logger
 
@@ -275,9 +321,9 @@ Returns the low-level updater from `createUpdater(config)`, or `null` when the i
 
 ### `await initialized.check()`
 
-Sets the OTA App Key request header, writes the resolved Otalan device ID to Expo update extra params, then calls `Updates.checkForUpdateAsync()` without fetching or reloading.
+Sets the OTA App Key request header, writes the resolved Otalan device ID and rollback protection context to Expo update extra params, then calls `Updates.checkForUpdateAsync()` without fetching or reloading.
 
-Returns `Promise<ExpoCheckResult>`. It resolves `{ updateAvailable: true }` when Expo reports an available update or rollback-to-embedded response. It resolves `{ updateAvailable: false }` when updates are disabled, no update is available, or an Expo update API call fails.
+Returns `Promise<ExpoCheckResult>`. It resolves `{ updateAvailable: true }` when Expo reports an available update or rollback-to-embedded response. It resolves `{ updateAvailable: false }` when updates are disabled, no update is available, the selected target is locally blocked by rollback protection, or an Expo update API call fails.
 
 ### `await initialized.ready()`
 
@@ -287,14 +333,17 @@ Returns `Promise<ExpoReadyResult | null>`.
 
 ### `await initialized.sync()`
 
-Sets the OTA App Key request header, writes the resolved Otalan device ID to Expo update extra params, then calls `Updates.checkForUpdateAsync()`, `Updates.fetchUpdateAsync()`, and `Updates.reloadAsync()`.
+Sets the OTA App Key request header, writes the resolved Otalan device ID and rollback protection context to Expo update extra params, then calls `Updates.checkForUpdateAsync()`, `Updates.fetchUpdateAsync()`, and `Updates.reloadAsync()`.
 
-Returns `Promise<boolean>`. It resolves `true` when a fetched update or rollback triggers reload, and `false` when updates are disabled, no update is available, fetching reports no new update, or an Expo update API call fails. `false` results are logged with compact `expo-updates` state, including enabled status, launch flags, runtime version, update ID, platform, and skip/result reason.
+Returns `Promise<boolean>`. It resolves `true` when a fetched update or rollback triggers reload, and `false` when updates are disabled, no update is available, the selected target is locally blocked by rollback protection, fetching reports no new update, or an Expo update API call fails. `false` results are logged with compact `expo-updates` state, including enabled status, launch flags, runtime version, update ID, platform, and skip/result reason.
 
 ### Package Metadata Exports
 
 - `OTALAN_EXPO_SDK_NAME`: package name read from `@otalan/expo`'s `package.json`
 - `OTALAN_EXPO_SDK_VERSION`: package version read from `@otalan/expo`'s `package.json`
+- `OTALAN_EXPO_DEVICE_ID_EXTRA_PARAM_KEY`: Expo extra param key for the SDK-managed device ID
+- `OTALAN_EXPO_BLOCKED_BUNDLE_IDS_EXTRA_PARAM_KEY`: Expo extra param key for locally blocked rollback targets
+- `OTALAN_EXPO_ROLLBACK_TARGET_BUNDLE_ID_EXTRA_PARAM_KEY`: Expo extra param key for a rollback request target
 
 These values are included in SDK warning logs.
 
@@ -356,7 +405,7 @@ Returns `Promise<ExpoReadyResult>`. If confirmation fails, it logs a warning and
 
 ## Network Behavior
 
-The SDK sends the OTA App Key in `x-api-key` on update checks and confirmation requests. Otalan can count an update as served when the Expo manifest endpoint selects an update; install confirmations are a separate client-reported signal that the device successfully launched that bundle. Confirmations include the app identifier, platform, channel, Otalan bundle ID, runtime version, stable device ID, and `transferSource`. Confirmation requests time out after `requestTimeoutMs`, defaulting to 15 seconds.
+The SDK sends the OTA App Key in `x-api-key` on update checks and confirmation requests. It sends the resolved device ID as the `otalan-device-id` Expo extra param. When rollback protection has local context, it also sends blocked target IDs and the rollback target through Expo extra params and the declared `x-otalan-blocked-bundle-ids` and `x-otalan-rollback-target-bundle-id` request headers. Otalan can count an update as served when the Expo manifest endpoint selects an update; install confirmations are a separate client-reported signal that the device successfully launched that bundle. Confirmations include the app identifier, platform, channel, Otalan bundle ID, runtime version, stable device ID, and `transferSource`. Confirmation requests time out after `requestTimeoutMs`, defaulting to 15 seconds.
 
 Update failure and telemetry events are reported best-effort to `/expo/report-update-event` with the same OTA App Key auth. Event payloads include `eventId`, `appId`, `platform`, `channel`, optional `runtimeVersion`, optional `deviceId`, optional `currentBundleId`, optional `targetBundleId`, `phase`, `category`, `errorType`, `errorMessage`, `sdkName`, and `sdkVersion`. Expo reports `phase: "check"` as `category: "check_failed"`, `fetch` and `reload` as `apply_failed`, and `confirm` as `telemetry_failed`. Confirmation failures are not failed updates; they only mean the SDK could not send telemetry for an already launched update. `targetBundleId` is included only when the Expo check result exposes enough manifest metadata; unmatched apply failures stay diagnostic in Otalan analytics.
 
@@ -375,6 +424,7 @@ Only active Otalan apps are eligible for Expo updates and install confirmations.
 - `initializeUpdater()` will create and persist `deviceId` for you unless you override it
 - use `getDeviceId()` when another part of your Expo update flow needs the same SDK-managed ID
 - `apiKey` is the OTA App Key and is sent in `x-api-key`
+- `rollbackProtection.validationDelayMs` defaults to `10000`
 - repeated and concurrent confirmation calls for the same launched update are skipped, including later app starts when AsyncStorage is available
 - Expo confirmations use `downloaded` as the experimental transfer source metadata default
 - apps must be active in Otalan to receive updates

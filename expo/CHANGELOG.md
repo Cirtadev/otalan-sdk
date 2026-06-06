@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.8.0 - 2026-06-05
+
+### Added
+
+- Added SDK-managed rollback validation for Expo update syncs. The SDK now records pending target bundles before reload, validates launched targets before confirming them, blocks targets that fail validation, and sends rollback context to Expo update checks through extra params and declared request headers.
+- Added `rollbackProtection` configuration with a default `validationDelayMs` of `10000` milliseconds, exposed through both `initializeUpdater()` and low-level `createUpdater()`.
+- Added rollback-request recovery for safe active updates: when the Otalan manifest endpoint serves a non-blocked active bundle instead of rollback-to-embedded, the SDK records that target for validation and reloads it.
+
+### Changed
+
+- Split Expo rollback protection into a platform-specific `expo-rollback-protection` source module.
+
+### Tests
+
+- Added regression coverage for pending rollback markers, launched-update validation, blocked target filtering, rollback-to-embedded requests, safe active updates during rollback requests, embedded rollback launches, and disabled rollback protection.
+
 ## 1.7.0 - 2026-06-02
 
 ### Added

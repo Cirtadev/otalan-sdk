@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.9.0 - 2026-06-05
+
+### Added
+
+- Added SDK-managed rollback validation for newly launched SDK-managed bundles, with `rollbackProtection` configuration for disabling or tuning the validation window.
+- Added a default `rollbackProtection.validationDelayMs` of `10000` milliseconds, exposed through both `initializeUpdater()` and low-level `createUpdater()` configuration.
+
+### Changed
+
+- Split Capacitor rollback protection into a platform-specific `capacitor-rollback-protection` source module.
+
+### Tests
+
+- Added regression coverage for pending rollback markers, validation delay handling, native ready timing, native rollback blocklisting, previous/default bundle recovery, and startup validation races.
+
 ## 1.8.0 - 2026-06-02
 
 ### Added

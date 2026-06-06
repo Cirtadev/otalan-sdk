@@ -37,6 +37,11 @@ export type CapacitorDownloadProgress = {
 
 export type CapacitorDownloadProgressListener = (event: CapacitorDownloadProgress) => void
 
+export type CapacitorRollbackProtectionConfig = {
+  enabled?: boolean
+  validationDelayMs?: number
+}
+
 export type CapacitorUpdateEventPhase = 'check' | 'download' | 'stage' | 'reload' | 'confirm'
 
 export type CapacitorUpdateEventCategory = 'check_failed' | 'apply_failed' | 'telemetry_failed'
@@ -82,6 +87,7 @@ export type CapacitorUpdaterConfig = {
   reloadOnSync?: boolean
   requestTimeoutMs?: number
   allowInsecureBundleUrls?: boolean
+  rollbackProtection?: boolean | CapacitorRollbackProtectionConfig
   headers?: HeadersInit
   onDownloadProgress?: CapacitorDownloadProgressListener
   logger?: Pick<Console, 'warn'>

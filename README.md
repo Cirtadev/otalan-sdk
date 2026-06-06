@@ -29,6 +29,7 @@ Use this when your app uses Expo with `expo-updates` and you only need:
 - current update metadata
 - check-only update availability
 - a small `initializeUpdater()` helper with manual sync
+- SDK-managed rollback validation for updates applied through `initialized.sync()`
 
 It delegates update checks, fetching, and reloads to `expo-updates`; it does not replace Expo's runtime or report SDK-managed download progress itself.
 
@@ -44,7 +45,34 @@ Otalan serves OTA traffic only for apps that are active in Otalan. If update tra
 
 Capacitor update checks include `appId`, `platform`, `channel`, `runtimeVersion`, `currentBundleId` when available, and stable `deviceId`. Successful `/capacitor/check` responses must include matching `appId`, `platform`, and `runtimeVersion`; `@otalan/capacitor` validates those values before trusting `updateAvailable` or using any selected bundle.
 
-Expo update selection is handled by `expo-updates` and the Otalan manifest endpoint. `@otalan/expo` can run a check-only `expo-updates` flow through `initialized.check()` or the manual check/fetch/reload flow through `initialized.sync()`, and it observes and confirms the launched update with its app, platform, channel, runtime version, Otalan bundle ID, and device ID context.
+Capacitor applies SDK-managed rollback validation to newly launched SDK-managed bundles. Before reloading into a target bundle, the SDK stores the previous/target bundle pair. On the target launch, `ready()` calls native `LiveUpdate.ready()` promptly, then waits for the validation window before confirming the install; if a previous launch of the same target did not validate, the SDK stages the previous bundle when possible, otherwise resets to the default bundle, then reloads. Native failures before SDK initialization still depend on native runtime rollback support such as Capawesome Live Update `readyTimeout`.
+
+Expo update selection is handled by `expo-updates` and the Otalan manifest endpoint. `@otalan/expo` can run a check-only `expo-updates` flow through `initialized.check()` or the manual check/fetch/reload flow through `initialized.sync()`, and it observes and confirms the launched update with its app, platform, channel, runtime version, Otalan bundle ID, and device ID context. Expo rollback protection records pending targets before reload, validates launched targets before confirmation, blocks failed targets locally, and asks the Otalan manifest endpoint for Expo rollback-to-embedded behavior when a pending target failed validation.
+
+## Rollback Support
+
+Both packages expose `rollbackProtection.validationDelayMs`, defaulting to `10000` milliseconds. Pass `rollbackProtection: false` to disable SDK-managed rollback protection.
+
+| Capability | `@otalan/capacitor` | `@otalan/expo` |
+| --- | --- | --- |
+| Records pending update before reload | Yes. Stores the previous and target bundle IDs before native reload. | Yes. Stores the target Otalan bundle ID before `Updates.reloadAsync()`. |
+| Validation delay | Yes. `ready()` calls native `LiveUpdate.ready()` promptly, then waits before Otalan install confirmation. | Yes. `ready()` waits before Otalan install confirmation for the launched pending target. |
+| Default `validationDelayMs` | `10000` ms | `10000` ms |
+| Failed target blocklist | Yes. Skips locally blocked target bundles on later checks and syncs. | Yes. Skips locally blocked targets and sends blocked IDs to Expo update checks. |
+| SDK-triggered rollback after failed validation | Yes. Stages the previous bundle when available, otherwise resets to the default bundle, then reloads. | Yes, through `expo-updates`. The SDK sends rollback context, checks/fetches, and reloads when Expo returns rollback-to-embedded. |
+| Native failure before JS starts | Covered by native runtime support such as Capawesome Live Update `readyTimeout`; SDK validation runs once JS starts. | Covered only by Expo runtime behavior such as emergency launch or rollback-to-embedded; SDK validation runs once JS starts. |
+| Main limitation | Requires native Live Update rollback support for failures before JS initializes. | Expo has no JS API for directly staging a previous update bundle, so the manifest endpoint must return Expo rollback-to-embedded. |
+
+## Otalan API Requirements
+
+Capacitor rollback protection does not require a new API endpoint. The SDK records pending bundles locally, filters locally blocked targets after `/capacitor/check`, and restores the previous/default bundle through the native Live Update plugin.
+
+Expo rollback protection does require `/expo/updates` support. The manifest endpoint must read the SDK rollback context from the request, avoid selecting locally blocked bundle IDs, and return an Expo rollback-to-embedded response when the rollback target is still the active bundle or no safe active bundle exists. If operators have already activated a safe non-blocked bundle, the endpoint can serve that bundle normally. The SDK sends this context through Expo extra params and, when present, declared request headers:
+
+- `otalan-blocked-bundle-ids` / `x-otalan-blocked-bundle-ids`: JSON array of target bundle IDs that failed local validation
+- `otalan-rollback-target-bundle-id` / `x-otalan-rollback-target-bundle-id`: failed target bundle ID that should roll back to embedded
+
+If `/expo/updates` ignores this context, the Expo SDK can still avoid confirming and locally block failed targets, but it cannot force a rollback because Expo does not expose a JavaScript API for staging a previous update. During a rollback request the SDK rejects locally blocked targets, reloads when `expo-updates` reports rollback-to-embedded, and can also reload a safe non-blocked active update selected by the endpoint.
 
 ## Update Event Reporting
 
@@ -86,6 +114,7 @@ VITE_OTALAN_APP_KEY=otalan_ota_xxx
 VITE_OTALAN_APP_ID=com.example.app
 VITE_OTALAN_CHANNEL=production
 VITE_OTALAN_RUNTIME_VERSION=1.0.0
+VITE_OTALAN_ROLLBACK_VALIDATION_DELAY_MS=10000
 ```
 
 Capacitor sync:
@@ -103,6 +132,9 @@ export async function syncOtalanUpdates() {
       appId: import.meta.env.VITE_OTALAN_APP_ID,
       channel: import.meta.env.VITE_OTALAN_CHANNEL,
       runtimeVersion: import.meta.env.VITE_OTALAN_RUNTIME_VERSION || undefined,
+      rollbackProtection: {
+        validationDelayMs: Number(import.meta.env.VITE_OTALAN_ROLLBACK_VALIDATION_DELAY_MS || 10000),
+      },
       onResume: true,
       onDownloadProgress: (event) => {
         console.log(
@@ -128,6 +160,7 @@ EXPO_PUBLIC_OTALAN_API_URL=https://api.otalan.com
 EXPO_PUBLIC_OTALAN_APP_KEY=otalan_ota_xxx
 EXPO_PUBLIC_OTALAN_APP_ID=com.example.app
 EXPO_PUBLIC_OTALAN_CHANNEL=production
+EXPO_PUBLIC_OTALAN_ROLLBACK_VALIDATION_DELAY_MS=10000
 ```
 
 Expo update sync:
@@ -144,6 +177,9 @@ export async function syncOtalanUpdates() {
       apiKey: process.env.EXPO_PUBLIC_OTALAN_APP_KEY!,
       appId: process.env.EXPO_PUBLIC_OTALAN_APP_ID!,
       channel: process.env.EXPO_PUBLIC_OTALAN_CHANNEL!,
+      rollbackProtection: {
+        validationDelayMs: Number(process.env.EXPO_PUBLIC_OTALAN_ROLLBACK_VALIDATION_DELAY_MS || 10000),
+      },
     })
   }
 
@@ -211,7 +247,7 @@ npm install @otalan/capacitor @capawesome/capacitor-live-update @capacitor/app @
 For Expo apps using `expo-updates`:
 
 ```bash
-npm install @otalan/expo expo-updates
+npm install @otalan/expo expo-updates expo-application
 ```
 
 Official support ranges are documented in each package README.

@@ -49,6 +49,8 @@ export const capacitorState = {
   downloadCalls: [] as Array<{ url: string; bundleId: string; checksum?: string }>,
   setNextCalls: [] as Array<{ bundleId: string }>,
   reloadCalls: 0,
+  readyCalls: 0,
+  resetCalls: 0,
 }
 
 export const fetchState = {
@@ -65,7 +67,10 @@ export const capacitorHttpState = {
 }
 
 export const liveUpdateMock = {
-  ready: async () => capacitorState.readyResult,
+  ready: async () => {
+    capacitorState.readyCalls += 1
+    return capacitorState.readyResult
+  },
   getVersionName: async () => ({ versionName: capacitorState.versionName }),
   getCurrentBundle: async () => capacitorState.currentBundle,
   getNextBundle: async () => capacitorState.nextBundle,
@@ -104,6 +109,9 @@ export const liveUpdateMock = {
     if (capacitorState.reloadError) {
       throw capacitorState.reloadError
     }
+  },
+  reset: async () => {
+    capacitorState.resetCalls += 1
   },
   addListener: async (
     eventName: 'downloadBundleProgress',
@@ -318,6 +326,8 @@ export function resetCapacitorTestHarness() {
   capacitorState.downloadCalls = []
   capacitorState.setNextCalls = []
   capacitorState.reloadCalls = 0
+  capacitorState.readyCalls = 0
+  capacitorState.resetCalls = 0
   liveUpdateMock.getDownloadedBundles = async () => {
     if (capacitorState.getDownloadedBundlesError) {
       throw capacitorState.getDownloadedBundlesError
