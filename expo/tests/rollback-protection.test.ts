@@ -313,6 +313,40 @@ describe('@otalan/expo rollback protection', () => {
     expect(fetchState.calls).toHaveLength(0)
   })
 
+  test('minimal sync shares startup rollback handling with ready', async () => {
+    asyncStorageState.storedItems.set(
+      'otalan:expo:rollback-protection:com.example.app:production:device-1',
+      JSON.stringify({
+        targetBundleId: 'bundle-bad',
+        stagedAt: 1,
+        launchAttemptedAt: Date.now() - 20_000,
+      }),
+    )
+    expoState.manifest = buildManifest('bundle-bad')
+    expoState.checkResult = {
+      isAvailable: false,
+      isRollBackToEmbedded: true,
+    }
+    expoState.fetchResult = {
+      isNew: false,
+      isRollBackToEmbedded: true,
+    }
+
+    const { initializeUpdater } = await loadSdk()
+    const updater = await initializeUpdater(buildConfig())
+
+    await expect(updater.sync()).resolves.toBe(true)
+
+    expect(expoState.checkCalls).toBe(1)
+    expect(expoState.fetchCalls).toBe(1)
+    expect(expoState.reloadCalls).toBe(1)
+    expect(expoState.requestHeaderOverrideCalls).toHaveLength(1)
+    expect(expoState.requestHeaderOverrideCalls[0]).toMatchObject({
+      'x-otalan-rollback-target-bundle-id': 'bundle-bad',
+      'x-otalan-blocked-bundle-ids': JSON.stringify(['bundle-bad']),
+    })
+  })
+
   test('ready applies a non-blocked active update while requesting rollback', async () => {
     asyncStorageState.storedItems.set(
       'otalan:expo:rollback-protection:com.example.app:production:device-1',

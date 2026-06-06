@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.8.1 - 2026-06-07
+
+### Fixed
+
+- Fixed Expo rollback protection for minimal `initializeUpdater().sync()` and low-level `check()` flows by sharing startup rollback preparation across `sync()`, `check()`, and `ready()` before normal update checks run.
+- Fixed `requestExpoRollbackToEmbedded()` to return whether rollback recovery actually fetched and reloaded a rollback or safe active update.
+
+### Tests
+
+- Added regression coverage for minimal `initializeUpdater().sync()` rollback recovery before normal Expo update checks.
+
 ## 1.8.0 - 2026-06-05
 
 ### Added

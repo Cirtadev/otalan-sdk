@@ -204,6 +204,34 @@ describe('@otalan/capacitor rollback protection', () => {
     expect(localStorage.getItem(ROLLBACK_STORAGE_KEY)).toBeNull()
   })
 
+  test('check stops when startup rollback protection restores a previous bundle', async () => {
+    localStorage.setItem(ROLLBACK_STORAGE_KEY, JSON.stringify({
+      targetBundleId: 'bundle-bad',
+      previousBundleId: 'bundle-current',
+      stagedAt: 1,
+      launchAttemptedAt: Date.now() - 20_000,
+    }))
+    capacitorState.currentBundle = { bundleId: 'bundle-bad' }
+
+    const logger = createLogger()
+    const updater = createProtectedUpdater({
+      logger: logger.logger,
+    })
+
+    await expect(updater.check()).resolves.toEqual({
+      updateAvailable: false,
+      appId: 'com.example.app',
+      platform: 'ios',
+      runtimeVersion: '1.0.0',
+    })
+
+    expect(capacitorState.readyCalls).toBe(0)
+    expect(capacitorState.setNextCalls).toEqual([{ bundleId: 'bundle-current' }])
+    expect(capacitorState.reloadCalls).toBe(1)
+    expect(fetchState.calls).toHaveLength(0)
+    expect(localStorage.getItem(ROLLBACK_STORAGE_KEY)).toBeNull()
+  })
+
   test('ready resets to the default bundle when a failed bundle has no previous bundle', async () => {
     localStorage.setItem(ROLLBACK_STORAGE_KEY, JSON.stringify({
       targetBundleId: 'bundle-bad',
@@ -415,6 +443,43 @@ describe('@otalan/capacitor rollback protection', () => {
     })
 
     expect(logger.warnCalls[0]?.[0]).toBe('[ota] update skipped because bundle failed rollback validation')
+  })
+
+  test('check joins startup validation before normal update checks', async () => {
+    localStorage.setItem(ROLLBACK_STORAGE_KEY, JSON.stringify({
+      targetBundleId: 'bundle-next',
+      previousBundleId: 'bundle-current',
+      stagedAt: 1,
+    }))
+    capacitorState.currentBundle = { bundleId: 'bundle-next' }
+    capacitorState.readyResult = { currentBundleId: 'bundle-next' }
+
+    const rollbackStorageDuringChecks: Array<string | null> = []
+    fetchState.handler = async (url) => {
+      if (url.endsWith('/capacitor/check')) {
+        rollbackStorageDuringChecks.push(localStorage.getItem(ROLLBACK_STORAGE_KEY))
+        return Response.json(buildCompatibleCheckResponse())
+      }
+
+      return new Response(null, { status: 204 })
+    }
+
+    const updater = createProtectedUpdater({
+      validationDelayMs: 1,
+    })
+
+    await expect(updater.check()).resolves.toEqual({
+      updateAvailable: false,
+      appId: 'com.example.app',
+      platform: 'ios',
+      runtimeVersion: '1.0.0',
+    })
+
+    expect(capacitorState.readyCalls).toBe(1)
+    expect(capacitorState.resetCalls).toBe(0)
+    expect(capacitorState.reloadCalls).toBe(0)
+    expect(rollbackStorageDuringChecks).toEqual([null])
+    expect(localStorage.getItem(ROLLBACK_STORAGE_KEY)).toBeNull()
   })
 
   test('initialized sync forwards rollback protection config to the low-level updater', async () => {

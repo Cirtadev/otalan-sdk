@@ -196,7 +196,7 @@ export async function requestExpoRollbackToEmbedded(
     throw error
   })
 
-  await applyExpoRollbackRecoveryUpdate(config, deviceId, checked, targetBundleId, logger)
+  return applyExpoRollbackRecoveryUpdate(config, deviceId, checked, targetBundleId, logger)
 }
 
 async function checkExpoUpdates(

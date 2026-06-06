@@ -403,7 +403,24 @@ export function createUpdater(config: CapacitorUpdaterConfig) {
     return current.bundleId ?? undefined
   }
 
+  async function buildNoUpdateCheckResult(): Promise<CapacitorCheckResult> {
+    return {
+      updateAvailable: false as const,
+      appId: config.appId,
+      platform: resolvePlatform(config),
+      runtimeVersion: await resolveRuntimeVersion(config),
+    }
+  }
+
   async function check() {
+    const readyResult = await getReadyBundle().catch((error) => {
+      logger.warn('Otalan ready() failed.', serializeErrorForLog(error))
+      return null
+    })
+    if (readyResult?.rollback) {
+      return buildNoUpdateCheckResult()
+    }
+
     const currentBundle = await getCurrentBundle()
     const update = await checkForUpdateWithReport(config, {
       deviceId,

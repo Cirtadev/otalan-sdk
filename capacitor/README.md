@@ -295,7 +295,7 @@ Returns `Promise<string | undefined>`.
 
 ### `await updater.check()`
 
-Checks Otalan for the selected update.
+Runs startup rollback protection, then checks Otalan for the selected update.
 
 Returns `Promise<CapacitorCheckResult>`.
 
@@ -362,7 +362,7 @@ Update failure and telemetry events are reported best-effort to `/capacitor/repo
 
 Otalan API requests time out after `requestTimeoutMs`, defaulting to 15 seconds. Bundle downloads are still performed by `@capawesome/capacitor-live-update`, but the SDK only passes HTTPS `downloadUrl` values to the plugin by default. Download progress is forwarded from the plugin's `downloadBundleProgress` event when `onDownloadProgress` is configured. Set `allowInsecureBundleUrls: true` only for local development environments that intentionally serve bundles over plain HTTP.
 
-SDK-managed rollback protection is enabled by default for Capacitor. It calls native `LiveUpdate.ready()` promptly, then delays Otalan install confirmation for newly launched SDK-managed bundles by `rollbackProtection.validationDelayMs`, defaulting to `10000`. This protects bundles that reach SDK initialization and then fail before validation completes. Locally rolled-back target bundles are skipped on later checks and syncs for the same app, channel, and device. Native failures before the app starts the SDK still require native runtime rollback support such as Capawesome Live Update `readyTimeout`.
+SDK-managed rollback protection is enabled by default for Capacitor. Startup `ready()`, `check()`, and `sync()` calls share rollback protection before normal update checks run. It calls native `LiveUpdate.ready()` promptly, then delays Otalan install confirmation for newly launched SDK-managed bundles by `rollbackProtection.validationDelayMs`, defaulting to `10000`. This protects bundles that reach SDK initialization and then fail before validation completes. Locally rolled-back target bundles are skipped on later checks and syncs for the same app, channel, and device. Native failures before the app starts the SDK still require native runtime rollback support such as Capawesome Live Update `readyTimeout`.
 
 `transferSource` is either `downloaded` or `cached`. Treat it as advisory client-reported metadata only.
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.9.1 - 2026-06-07
+
+### Fixed
+
+- Fixed low-level `createUpdater().check()` to run shared startup rollback protection before normal `/capacitor/check` requests, so failed pending bundles are restored before availability checks continue.
+
+### Tests
+
+- Added regression coverage for `check()` startup rollback restoration and validation ordering before normal update checks.
+
 ## 1.9.0 - 2026-06-05
 
 ### Added

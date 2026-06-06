@@ -24,6 +24,7 @@ import {
 import { reportExpoUpdateEvent } from './update-events'
 import type {
   ExpoRollbackProtectionConfig,
+  ExpoRollbackProtectionReadyResult,
 } from './expo-rollback-protection'
 
 export {
@@ -104,6 +105,12 @@ export type InitializedExpoUpdater = {
   check: () => Promise<ExpoCheckResult>
   ready: () => Promise<ExpoReadyResult | null>
   sync: () => Promise<boolean>
+}
+
+type StartupRollbackProtectionResult = {
+  current: ExpoReadyResult
+  rollbackApplied: boolean
+  rollbackProtection: ExpoRollbackProtectionReadyResult
 }
 
 // -----------------------------------------------------------------------------
@@ -653,6 +660,11 @@ export async function initializeUpdater(
       headers: config.headers,
       logger,
     }
+    const startupRollbackProtection = await updater.prepareStartupRollbackProtection()
+    if (startupRollbackProtection.rollbackProtection.action === 'request-rollback') {
+      return startupRollbackProtection.rollbackApplied
+    }
+
     const checked = await checkForUpdateWithRollbackProtection(reportConfig, deviceId, logger).catch((error) => {
       reportExpoUpdateEvent(reportConfig, {
         deviceId,
@@ -755,9 +767,15 @@ export function createUpdater(config: ExpoUpdaterConfig) {
   const deviceId = requireDeviceId(config)
   let confirmedBundleKey: string | null = null
   let readyPromise: Promise<ExpoReadyResult> | null = null
+  let startupRollbackProtectionPromise: Promise<StartupRollbackProtectionResult> | null = null
   const confirmingBundlePromises = new Map<string, Promise<ExpoReadyResult>>()
 
   async function check(): Promise<ExpoCheckResult> {
+    const startupRollbackProtection = await prepareStartupRollbackProtection()
+    if (startupRollbackProtection.rollbackProtection.action === 'request-rollback') {
+      return { updateAvailable: startupRollbackProtection.rollbackApplied }
+    }
+
     const checked = await checkForUpdateWithRollbackProtection(config, deviceId, logger).catch((error) => {
       reportExpoUpdateEvent(config, {
         deviceId,
@@ -794,16 +812,47 @@ export function createUpdater(config: ExpoUpdaterConfig) {
     } satisfies ExpoReadyResult
   }
 
-  async function confirmCurrentUpdate(): Promise<ExpoReadyResult> {
-    const current = await getCurrentUpdate()
-
-    if (!current.enabled) {
-      return current
+  async function prepareStartupRollbackProtection(): Promise<StartupRollbackProtectionResult> {
+    if (startupRollbackProtectionPromise) {
+      return startupRollbackProtectionPromise
     }
 
-    const rollbackProtection = await prepareExpoRollbackProtectionBeforeReady(config, current)
+    startupRollbackProtectionPromise = (async () => {
+      const current = await getCurrentUpdate()
+
+      if (!current.enabled) {
+        return {
+          current,
+          rollbackApplied: false,
+          rollbackProtection: { action: 'continue', validationDelayMs: 0 },
+        } satisfies StartupRollbackProtectionResult
+      }
+
+      const rollbackProtection = await prepareExpoRollbackProtectionBeforeReady(config, current)
+      if (rollbackProtection.action === 'request-rollback') {
+        return {
+          current,
+          rollbackApplied: await requestExpoRollbackToEmbedded(config, deviceId, rollbackProtection.targetBundleId, logger),
+          rollbackProtection,
+        } satisfies StartupRollbackProtectionResult
+      }
+
+      return {
+        current,
+        rollbackApplied: false,
+        rollbackProtection,
+      } satisfies StartupRollbackProtectionResult
+    })().catch((error) => {
+      startupRollbackProtectionPromise = null
+      throw error
+    })
+
+    return startupRollbackProtectionPromise
+  }
+
+  async function confirmCurrentUpdate(): Promise<ExpoReadyResult> {
+    const { current, rollbackProtection } = await prepareStartupRollbackProtection()
     if (rollbackProtection.action === 'request-rollback') {
-      await requestExpoRollbackToEmbedded(config, deviceId, rollbackProtection.targetBundleId, logger)
       return current
     }
 
@@ -916,6 +965,7 @@ export function createUpdater(config: ExpoUpdaterConfig) {
     check,
     getCurrentUpdate,
     confirmCurrentUpdate,
+    prepareStartupRollbackProtection,
     ready,
   }
 }
