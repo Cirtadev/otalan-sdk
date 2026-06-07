@@ -168,6 +168,10 @@ export async function applyExpoRollbackRecoveryUpdate(
 
   await clearExpoRollbackRequest(config)
 
+  if (fetchResult.isRollBackToEmbedded) {
+    await resetExpoRollbackProtectionRequestContext(config, logger)
+  }
+
   await Updates.reloadAsync().catch((error) => {
     reportExpoUpdateEvent(config, {
       deviceId,
@@ -253,14 +257,10 @@ function setExpoUpdateRequestHeaders(
 ) {
   const headers: Record<string, string> = {
     'x-api-key': config.apiKey,
-  }
-
-  if (context.blockedBundleIds.length > 0) {
-    headers['x-otalan-blocked-bundle-ids'] = JSON.stringify(context.blockedBundleIds)
-  }
-
-  if (context.rollbackTargetBundleId) {
-    headers['x-otalan-rollback-target-bundle-id'] = context.rollbackTargetBundleId
+    'x-otalan-blocked-bundle-ids': context.blockedBundleIds.length > 0
+      ? JSON.stringify(context.blockedBundleIds)
+      : '',
+    'x-otalan-rollback-target-bundle-id': context.rollbackTargetBundleId ?? '',
   }
 
   try {
@@ -268,6 +268,16 @@ function setExpoUpdateRequestHeaders(
   } catch (error) {
     logger.warn('Otalan Expo update request header override failed.', serializeErrorForLog(error))
   }
+}
+
+async function resetExpoRollbackProtectionRequestContext(
+  config: Pick<ExpoUpdatesAdapterConfig, 'apiKey'>,
+  logger: Pick<Console, 'warn'>,
+) {
+  const emptyContext = { blockedBundleIds: [] }
+
+  await setExpoUpdateRollbackProtectionExtraParams(emptyContext, logger)
+  setExpoUpdateRequestHeaders(config, emptyContext, logger)
 }
 
 function serializeErrorForLog(error: unknown, depth = 0): unknown {

@@ -695,7 +695,11 @@ describe('@otalan/expo', () => {
       { key: OTALAN_EXPO_ROLLBACK_TARGET_BUNDLE_ID_EXTRA_PARAM_KEY, value: null },
     ])
     expect(expoState.requestHeaderOverrideCalls).toEqual([
-      { 'x-api-key': 'otalan_ota_xxx' },
+      {
+        'x-api-key': 'otalan_ota_xxx',
+        'x-otalan-blocked-bundle-ids': '',
+        'x-otalan-rollback-target-bundle-id': '',
+      },
     ])
     expect(expoState.requestHeaderOverrideCalls[0]).not.toHaveProperty('x-device-id')
     expect(expoState.checkCalls).toBe(1)
@@ -859,7 +863,11 @@ describe('@otalan/expo', () => {
       ],
     ])
     expect(expoState.requestHeaderOverrideCalls).toEqual([
-      { 'x-api-key': 'otalan_ota_xxx' },
+      {
+        'x-api-key': 'otalan_ota_xxx',
+        'x-otalan-blocked-bundle-ids': '',
+        'x-otalan-rollback-target-bundle-id': '',
+      },
     ])
     expect(expoState.checkCalls).toBe(1)
     expect(expoState.fetchCalls).toBe(1)

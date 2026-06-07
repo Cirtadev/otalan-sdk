@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.8.2 - 2026-06-07
+
+### Fixed
+
+- Fixed stale Expo rollback request context by clearing rollback extra params and request-header overrides after rollback-to-embedded fetches.
+
+### Tests
+
+- Added regression coverage for clearing stale rollback request headers after rollback-to-embedded fetches.
+
 ## 1.8.1 - 2026-06-07
 
 ### Fixed

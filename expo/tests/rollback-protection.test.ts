@@ -139,6 +139,22 @@ function buildConfig(input: Record<string, unknown> = {}) {
   }
 }
 
+function buildEmptyRollbackHeaders() {
+  return {
+    'x-api-key': 'otalan_ota_xxx',
+    'x-otalan-blocked-bundle-ids': '',
+    'x-otalan-rollback-target-bundle-id': '',
+  }
+}
+
+function buildRollbackHeaders(bundleId: string) {
+  return {
+    'x-api-key': 'otalan_ota_xxx',
+    'x-otalan-blocked-bundle-ids': JSON.stringify([bundleId]),
+    'x-otalan-rollback-target-bundle-id': bundleId,
+  }
+}
+
 function buildManifest(bundleId: string) {
   return {
     metadata: {
@@ -304,10 +320,10 @@ describe('@otalan/expo rollback protection', () => {
       key: 'otalan-blocked-bundle-ids',
       value: JSON.stringify(['bundle-bad']),
     })
-    expect(expoState.requestHeaderOverrideCalls[0]).toMatchObject({
-      'x-otalan-rollback-target-bundle-id': 'bundle-bad',
-      'x-otalan-blocked-bundle-ids': JSON.stringify(['bundle-bad']),
-    })
+    expect(expoState.requestHeaderOverrideCalls).toEqual([
+      buildRollbackHeaders('bundle-bad'),
+      buildEmptyRollbackHeaders(),
+    ])
     expect(expoState.fetchCalls).toBe(1)
     expect(expoState.reloadCalls).toBe(1)
     expect(fetchState.calls).toHaveLength(0)
@@ -340,11 +356,10 @@ describe('@otalan/expo rollback protection', () => {
     expect(expoState.checkCalls).toBe(1)
     expect(expoState.fetchCalls).toBe(1)
     expect(expoState.reloadCalls).toBe(1)
-    expect(expoState.requestHeaderOverrideCalls).toHaveLength(1)
-    expect(expoState.requestHeaderOverrideCalls[0]).toMatchObject({
-      'x-otalan-rollback-target-bundle-id': 'bundle-bad',
-      'x-otalan-blocked-bundle-ids': JSON.stringify(['bundle-bad']),
-    })
+    expect(expoState.requestHeaderOverrideCalls).toEqual([
+      buildRollbackHeaders('bundle-bad'),
+      buildEmptyRollbackHeaders(),
+    ])
   })
 
   test('ready applies a non-blocked active update while requesting rollback', async () => {
@@ -555,7 +570,7 @@ describe('@otalan/expo rollback protection', () => {
       { key: OTALAN_EXPO_ROLLBACK_TARGET_BUNDLE_ID_EXTRA_PARAM_KEY, value: null },
     ])
     expect(expoState.requestHeaderOverrideCalls).toEqual([
-      { 'x-api-key': 'otalan_ota_xxx' },
+      buildEmptyRollbackHeaders(),
     ])
   })
 

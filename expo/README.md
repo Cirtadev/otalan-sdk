@@ -119,7 +119,7 @@ OTA Publish Key values use the `otalan_ci_...` token format and are for release 
 
 Partial rollouts for Expo require a stable device ID on Otalan update checks. `@otalan/expo` creates and persists that ID, then writes it to Expo update extra params as `otalan-device-id` before checking for updates. App code does not need to know or set an Otalan device header.
 
-`initialized.check()` and `initialized.sync()` set the OTA App Key request header before checking for updates. Rollback protection also sets `x-otalan-blocked-bundle-ids` and `x-otalan-rollback-target-bundle-id` when needed. Expo requires runtime-overridden header keys to already be declared in `updates.requestHeaders` in native config.
+`initialized.check()` and `initialized.sync()` set the OTA App Key request header before checking for updates. Rollback protection also sets `x-otalan-blocked-bundle-ids` and `x-otalan-rollback-target-bundle-id`, using empty values when there is no rollback context so stale Expo request-header overrides are cleared. Expo requires runtime-overridden header keys to already be declared in `updates.requestHeaders` in native config.
 
 ## Quick Start
 
@@ -238,10 +238,12 @@ You can disable SDK rollback protection with `rollbackProtection: false`. This o
 
 Expo rollback support requires `/expo/updates` to understand the rollback context sent by the SDK. The endpoint must avoid selecting locally blocked targets and must return Expo rollback-to-embedded when the rollback target is still active or no safe active bundle exists. If operators have already activated a safe non-blocked bundle, the endpoint can serve that bundle normally.
 
-The SDK sends rollback context through Expo extra params and, when present, declared request headers:
+The SDK sends rollback context through Expo extra params and declared request headers:
 
 - `otalan-blocked-bundle-ids` / `x-otalan-blocked-bundle-ids`: JSON array of target bundle IDs that failed local validation
 - `otalan-rollback-target-bundle-id` / `x-otalan-rollback-target-bundle-id`: failed target bundle ID that should roll back to embedded
+
+When there is no rollback context, or after `expo-updates` fetches a rollback-to-embedded directive, the SDK clears the extra params and writes empty rollback request-header values so future Expo checks do not reuse stale rollback targets.
 
 During a rollback request, the SDK rejects locally blocked targets, reloads when `expo-updates` reports `isRollBackToEmbedded`, and can also reload a safe non-blocked active update selected by the endpoint. If the endpoint returns no update, or a fetch result that is neither rollback-to-embedded nor a new safe update, the SDK leaves the rollback request pending for a later check.
 
